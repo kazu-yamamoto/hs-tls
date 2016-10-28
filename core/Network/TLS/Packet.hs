@@ -589,6 +589,7 @@ generateMasterSecret SSL3  = generateMasterSecret_SSL
 generateMasterSecret TLS10 = generateMasterSecret_TLS prf_MD5SHA1
 generateMasterSecret TLS11 = generateMasterSecret_TLS prf_MD5SHA1
 generateMasterSecret TLS12 = generateMasterSecret_TLS prf_SHA256
+generateMasterSecret _     = error "generateMasterSecret_TLS"
 
 generateKeyBlock_TLS :: PRF -> ClientRandom -> ServerRandom -> Bytes -> Int -> Bytes
 generateKeyBlock_TLS prf (ClientRandom c) (ServerRandom s) mastersecret kbsize =
@@ -607,6 +608,7 @@ generateKeyBlock SSL3  = generateKeyBlock_SSL
 generateKeyBlock TLS10 = generateKeyBlock_TLS prf_MD5SHA1
 generateKeyBlock TLS11 = generateKeyBlock_TLS prf_MD5SHA1
 generateKeyBlock TLS12 = generateKeyBlock_TLS prf_SHA256
+generateKeyBlock _     = error "generateKeyBlock"
 
 generateFinished_TLS :: PRF -> Bytes -> Bytes -> HashCtx -> Bytes
 generateFinished_TLS prf label mastersecret hashctx = prf mastersecret seed 12
