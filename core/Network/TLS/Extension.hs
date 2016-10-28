@@ -48,6 +48,8 @@ module Network.TLS.Extension
     , SupportedVersions(..)
     , KeyShare(..)
     , KeyShareEntry(..)
+    , SignatureScheme(..)
+    , SignatureSchemes(..)
     ) where
 
 import Control.Monad
@@ -354,6 +356,7 @@ instance Extension HeartBeat where
             Just (Just mode) -> Just $ HeartBeat mode
             _                -> Nothing
 
+-- for TLS 1.2
 data SignatureAlgorithms = SignatureAlgorithms [HashAndSignatureAlgorithm]
     deriving (Show,Eq)
 
@@ -365,6 +368,63 @@ instance Extension SignatureAlgorithms where
         runGetMaybe $ do
             len <- getWord16
             SignatureAlgorithms <$> getList (fromIntegral len) (getSignatureHashAlgorithm >>= \sh -> return (2, sh))
+
+-- for TLS 1.3
+data SignatureScheme =
+      SigScheme_RSApkcs1SHA1
+    | SigScheme_RSApkcs1SHA256
+    | SigScheme_RSApkcs1SHA384
+    | SigScheme_RSApkcs1SHA512
+    | SigScheme_ECDSAp256SHA256
+    | SigScheme_ECDSAp384SHA384
+    | SigScheme_ECDSAp512SHA512
+    | SigScheme_RSApssSHA256
+    | SigScheme_RSApssSHA384
+    | SigScheme_RSApssSHA512
+    | SigScheme_Ed25519
+    | SigScheme_Ed448
+    deriving (Eq,Show)
+
+toSignatureScheme :: Word16 -> Maybe SignatureScheme
+toSignatureScheme 0x0201 = Just SigScheme_RSApkcs1SHA1
+toSignatureScheme 0x0401 = Just SigScheme_RSApkcs1SHA256
+toSignatureScheme 0x0501 = Just SigScheme_RSApkcs1SHA384
+toSignatureScheme 0x0601 = Just SigScheme_RSApkcs1SHA512
+toSignatureScheme 0x0403 = Just SigScheme_ECDSAp256SHA256
+toSignatureScheme 0x0503 = Just SigScheme_ECDSAp384SHA384
+toSignatureScheme 0x0603 = Just SigScheme_ECDSAp512SHA512
+toSignatureScheme 0x0804 = Just SigScheme_RSApssSHA256
+toSignatureScheme 0x0805 = Just SigScheme_RSApssSHA384
+toSignatureScheme 0x0806 = Just SigScheme_RSApssSHA512
+toSignatureScheme 0x0807 = Just SigScheme_Ed25519
+toSignatureScheme 0x0808 = Just SigScheme_Ed448
+toSignatureScheme _      = Nothing
+
+fromSignatureScheme :: SignatureScheme -> Word16
+fromSignatureScheme SigScheme_RSApkcs1SHA1    = 0x0201
+fromSignatureScheme SigScheme_RSApkcs1SHA256  = 0x0401
+fromSignatureScheme SigScheme_RSApkcs1SHA384  = 0x0501
+fromSignatureScheme SigScheme_RSApkcs1SHA512  = 0x0601
+fromSignatureScheme SigScheme_ECDSAp256SHA256 = 0x0402
+fromSignatureScheme SigScheme_ECDSAp384SHA384 = 0x0503
+fromSignatureScheme SigScheme_ECDSAp512SHA512 = 0x0603
+fromSignatureScheme SigScheme_RSApssSHA256    = 0x0804
+fromSignatureScheme SigScheme_RSApssSHA384    = 0x0805
+fromSignatureScheme SigScheme_RSApssSHA512    = 0x0806
+fromSignatureScheme SigScheme_Ed25519         = 0x0807
+fromSignatureScheme SigScheme_Ed448           = 0x0808
+
+data SignatureSchemes = SignatureSchemes [SignatureScheme]
+    deriving (Show,Eq)
+
+instance Extension SignatureSchemes where
+    extensionID _ = extensionID_SignatureAlgorithms
+    extensionEncode (SignatureSchemes algs) =
+        runPut $ putWord16 (fromIntegral (length algs * 2)) >> mapM_ (putWord16 . fromSignatureScheme) algs
+    extensionDecode _ =
+        runGetMaybe $ do
+            len <- getWord16
+            SignatureSchemes . catMaybes <$> getList (fromIntegral len) ((\mss -> (2,mss)) . toSignatureScheme <$> getWord16)
 
 data SupportedVersions = SupportedVersions [Version]
     deriving (Show,Eq)
