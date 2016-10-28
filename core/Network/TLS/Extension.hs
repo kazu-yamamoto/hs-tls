@@ -21,6 +21,13 @@ module Network.TLS.Extension
     , extensionID_EcPointFormats
     , extensionID_Heartbeat
     , extensionID_SignatureAlgorithms
+    , extensionID_KeyShare
+    , extensionID_PreSharedKey
+    , extensionID_EarlyData
+    , extensionID_SupportedVersions
+    , extensionID_Cookie
+    , extensionID_PskKeyExchangeModes
+    , extensionID_TicketEarlyDataInfo
     -- all implemented extensions
     , ServerNameType(..)
     , ServerName(..)
@@ -82,6 +89,13 @@ extensionID_ServerName
   , extensionID_EncryptThenMAC
   , extensionID_ExtendedMasterSecret
   , extensionID_SessionTicket
+  , extensionID_KeyShare
+  , extensionID_PreSharedKey
+  , extensionID_EarlyData
+  , extensionID_SupportedVersions
+  , extensionID_Cookie
+  , extensionID_PskKeyExchangeModes
+  , extensionID_TicketEarlyDataInfo
   , extensionID_NextProtocolNegotiation
   , extensionID_SecureRenegotiation :: ExtensionID
 extensionID_ServerName                          = 0x0 -- RFC6066
@@ -94,10 +108,10 @@ extensionID_UserMapping                         = 0x6 -- RFC4681
 extensionID_ClientAuthz                         = 0x7 -- RFC5878
 extensionID_ServerAuthz                         = 0x8 -- RFC5878
 extensionID_CertType                            = 0x9 -- RFC6091
-extensionID_Groups                              = 0xa -- RFC4492
+extensionID_Groups                              = 0xa -- RFC4492, TLS 1.3 supported groups
 extensionID_EcPointFormats                      = 0xb -- RFC4492
 extensionID_SRP                                 = 0xc -- RFC5054
-extensionID_SignatureAlgorithms                 = 0xd -- RFC5246
+extensionID_SignatureAlgorithms                 = 0xd -- RFC5246, TLS 1.3
 extensionID_SRTP                                = 0xe -- RFC5764
 extensionID_Heartbeat                           = 0xf -- RFC6520
 extensionID_ApplicationLayerProtocolNegotiation = 0x10 -- RFC7301
@@ -109,6 +123,13 @@ extensionID_Padding                             = 0x15 -- draft-agl-tls-padding.
 extensionID_EncryptThenMAC                      = 0x16 -- RFC7366
 extensionID_ExtendedMasterSecret                = 0x17 -- draft-ietf-tls-session-hash. expires 2015-09-26
 extensionID_SessionTicket                       = 0x23 -- RFC4507
+extensionID_KeyShare                            = 0x28 -- TLS 1.3
+extensionID_PreSharedKey                        = 0x29 -- TLS 1.3
+extensionID_EarlyData                           = 0x2a -- TLS 1.3
+extensionID_SupportedVersions                   = 0x2b -- TLS 1.3
+extensionID_Cookie                              = 0x2c -- TLS 1.3
+extensionID_PskKeyExchangeModes                 = 0x2d -- TLS 1.3
+extensionID_TicketEarlyDataInfo                 = 0x2e -- TLS 1.3
 extensionID_NextProtocolNegotiation             = 0x3374 -- obsolete
 extensionID_SecureRenegotiation                 = 0xff01 -- RFC5746
 
@@ -153,6 +174,13 @@ supportedExtensions = [ extensionID_ServerName
                       , extensionID_Groups
                       , extensionID_EcPointFormats
                       , extensionID_SignatureAlgorithms
+                      , extensionID_KeyShare
+                      , extensionID_PreSharedKey
+                      , extensionID_EarlyData
+                      , extensionID_SupportedVersions
+                      , extensionID_Cookie
+                      , extensionID_PskKeyExchangeModes
+                      , extensionID_TicketEarlyDataInfo
                       ]
 
 -- | Extension class to transform bytes to and from a high level Extension type.
