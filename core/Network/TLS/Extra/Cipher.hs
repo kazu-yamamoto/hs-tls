@@ -41,6 +41,8 @@ module Network.TLS.Extra.Cipher
     , cipher_ECDHE_RSA_AES256CBC_SHA
     , cipher_ECDHE_RSA_AES256CBC_SHA384
     , cipher_ECDHE_ECDSA_AES128GCM_SHA256
+    , cipher_AES128GCM_SHA256
+    , cipher_AES256GCM_SHA384
     ) where
 
 import qualified Data.ByteString as B
@@ -491,6 +493,26 @@ cipher_ECDHE_RSA_AES256GCM_SHA384 = Cipher
     , cipherHash         = SHA384
     , cipherKeyExchange  = CipherKeyExchange_ECDHE_RSA
     , cipherMinVer       = Just TLS12 -- RFC 5289
+    }
+
+cipher_AES128GCM_SHA256 :: Cipher
+cipher_AES128GCM_SHA256 = Cipher
+    { cipherID           = 0x1301
+    , cipherName         = "AES128GCM-SHA256"
+    , cipherBulk         = bulk_aes128gcm
+    , cipherHash         = SHA256
+    , cipherKeyExchange  = CipherKeyExchange_TLS13
+    , cipherMinVer       = Just TLS13ID16
+    }
+
+cipher_AES256GCM_SHA384 :: Cipher
+cipher_AES256GCM_SHA384 = Cipher
+    { cipherID           = 0x1302
+    , cipherName         = "AES256GCM-SH384"
+    , cipherBulk         = bulk_aes256gcm
+    , cipherHash         = SHA384
+    , cipherKeyExchange  = CipherKeyExchange_TLS13
+    , cipherMinVer       = Just TLS13ID16
     }
 
 {-

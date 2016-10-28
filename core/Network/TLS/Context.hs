@@ -129,6 +129,7 @@ instance TLSParams ServerParams where
                         CipherKeyExchange_ECDH_ECDSA  -> False
                         CipherKeyExchange_ECDH_RSA    -> False
                         CipherKeyExchange_ECDHE_ECDSA -> False
+                        CipherKeyExchange_TLS13       -> True   -- dirty hack
 
                 canDHE        = isJust $ serverDHEParams sparams
                 canSignDSS    = SignatureDSS `elem` signingAlgs
