@@ -44,6 +44,7 @@ module Network.TLS.Extension
     , HeartBeat(..)
     , HeartBeatMode(..)
     , SignatureAlgorithms(..)
+    , SupportedVersions(..)
     ) where
 
 import Control.Monad
@@ -54,11 +55,12 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
 
+import Network.TLS.Types (Version(..))
 import Network.TLS.Crypto.Types
 import Network.TLS.Struct (ExtensionID, EnumSafe8(..), EnumSafe16(..), HashAndSignatureAlgorithm)
 import Network.TLS.Wire
 import Network.TLS.Imports
-import Network.TLS.Packet (putSignatureHashAlgorithm, getSignatureHashAlgorithm)
+import Network.TLS.Packet (putSignatureHashAlgorithm, getSignatureHashAlgorithm, putVersion', getVersion')
 import Network.TLS.Types
 
 type HostName = String
@@ -358,3 +360,15 @@ instance Extension SignatureAlgorithms where
         runGetMaybe $ do
             len <- getWord16
             SignatureAlgorithms <$> getList (fromIntegral len) (getSignatureHashAlgorithm >>= \sh -> return (2, sh))
+
+data SupportedVersions = SupportedVersions [Version]
+    deriving (Show,Eq)
+
+instance Extension SupportedVersions where
+    extensionID _ = extensionID_SupportedVersions
+    extensionEncode (SupportedVersions vers) =
+        runPut $ putWord8 (fromIntegral (length vers * 2)) >> mapM_ putVersion' vers
+    extensionDecode _ =
+        runGetMaybe $ do
+            len <- getWord8
+            SupportedVersions <$> getList (fromIntegral len) (getVersion' >>= \ver -> return (2, ver))

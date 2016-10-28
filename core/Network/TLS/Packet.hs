@@ -56,6 +56,8 @@ module Network.TLS.Packet
     -- * for extensions parsing
     , getSignatureHashAlgorithm
     , putSignatureHashAlgorithm
+    , getVersion'
+    , putVersion'
     ) where
 
 import Network.TLS.Imports
@@ -88,16 +90,16 @@ data CurrentParams = CurrentParams
     } deriving (Show,Eq)
 
 {- marshall helpers -}
-getVersion :: Get Version
-getVersion = do
+getVersion' :: Get Version
+getVersion' = do
     major <- getWord8
     minor <- getWord8
     case verOfNum (major, minor) of
         Nothing -> fail ("invalid version : " ++ show major ++ "," ++ show minor)
         Just v  -> return v
 
-putVersion :: Version -> Put
-putVersion ver = putWord8 major >> putWord8 minor
+putVersion' :: Version -> Put
+putVersion' ver = putWord8 major >> putWord8 minor
   where (major, minor) = numericalVer ver
 
 getHeaderType :: Get ProtocolType
@@ -121,7 +123,7 @@ getHandshakeType = do
  - decode and encode headers
  -}
 decodeHeader :: ByteString -> Either TLSError Header
-decodeHeader = runGetErr "header" $ liftM3 Header getHeaderType getVersion getWord16
+decodeHeader = runGetErr "header" $ liftM3 Header getHeaderType getVersion' getWord16
 
 decodeDeprecatedHeaderLength :: ByteString -> Either TLSError Word16
 decodeDeprecatedHeaderLength = runGetErr "deprecatedheaderlength" $ subtract 0x8000 <$> getWord16
@@ -130,11 +132,11 @@ decodeDeprecatedHeader :: Word16 -> ByteString -> Either TLSError Header
 decodeDeprecatedHeader size =
     runGetErr "deprecatedheader" $ do
         1 <- getWord8
-        version <- getVersion
+        version <- getVersion'
         return $ Header ProtocolType_DeprecatedHandshake version size
 
 encodeHeader :: Header -> ByteString
-encodeHeader (Header pt ver len) = runPut (putHeaderType pt >> putVersion ver >> putWord16 len)
+encodeHeader (Header pt ver len) = runPut (putHeaderType pt >> putVersion' ver >> putWord16 len)
         {- FIXME check len <= 2^14 -}
 
 encodeHeaderNoVer :: Header -> ByteString
@@ -192,7 +194,7 @@ decodeDeprecatedHandshake :: ByteString -> Either TLSError Handshake
 decodeDeprecatedHandshake b = runGetErr "deprecatedhandshake" getDeprecated b
   where getDeprecated = do
             1 <- getWord8
-            ver <- getVersion
+            ver <- getVersion'
             cipherSpecLen <- fromEnum <$> getWord16
             sessionIdLen <- fromEnum <$> getWord16
             challengeLen <- fromEnum <$> getWord16
@@ -215,7 +217,7 @@ decodeHelloRequest = return HelloRequest
 
 decodeClientHello :: Get Handshake
 decodeClientHello = do
-    ver          <- getVersion
+    ver          <- getVersion'
     random       <- getClientRandom32
     session      <- getSession
     ciphers      <- getWords16
@@ -228,7 +230,7 @@ decodeClientHello = do
 
 decodeServerHello :: Get Handshake
 decodeServerHello = do
-    ver           <- getVersion
+    ver           <- getVersion'
     random        <- getServerRandom32
     session       <- getSession
     cipherid      <- getWord16
@@ -366,7 +368,7 @@ encodeHandshakeContent :: Handshake -> Put
 encodeHandshakeContent (ClientHello _ _ _ _ _ _ (Just deprecated)) = do
     putBytes deprecated
 encodeHandshakeContent (ClientHello version random session cipherIDs compressionIDs exts Nothing) = do
-    putVersion version
+    putVersion' version
     putClientRandom32 random
     putSession session
     putWords16 cipherIDs
@@ -375,7 +377,7 @@ encodeHandshakeContent (ClientHello version random session cipherIDs compression
     return ()
 
 encodeHandshakeContent (ServerHello version random session cipherID compressionID exts) =
-    putVersion version >> putServerRandom32 random >> putSession session
+    putVersion' version >> putServerRandom32 random >> putSession session
                        >> putWord16 cipherID >> putWord8 compressionID
                        >> putExtensions exts >> return ()
 
@@ -550,10 +552,10 @@ encodeChangeCipherSpec = runPut (putWord8 1)
 -- rsa pre master secret
 decodePreMasterSecret :: Bytes -> Either TLSError (Version, Bytes)
 decodePreMasterSecret = runGetErr "pre-master-secret" $ do
-    liftM2 (,) getVersion (getBytes 46)
+    liftM2 (,) getVersion' (getBytes 46)
 
 encodePreMasterSecret :: Version -> Bytes -> Bytes
-encodePreMasterSecret version bytes = runPut (putVersion version >> putBytes bytes)
+encodePreMasterSecret version bytes = runPut (putVersion' version >> putBytes bytes)
 
 -- | in certain cases, we haven't manage to decode ServerKeyExchange properly,
 -- because the decoding was too eager and the cipher wasn't been set yet.
