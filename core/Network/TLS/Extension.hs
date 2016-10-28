@@ -188,6 +188,8 @@ supportedExtensions = [ extensionID_ServerName
 -- | Extension class to transform bytes to and from a high level Extension type.
 class Extension a where
     extensionID     :: a -> ExtensionID
+    -- True = ServerHello, False = ClienetHello
+    -- FIXME: Hello Retry Request for KeyShare
     extensionDecode :: Bool -> ByteString -> Maybe a
     extensionEncode :: a -> ByteString
 
