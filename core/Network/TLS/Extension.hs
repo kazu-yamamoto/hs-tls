@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 -- |
 -- Module      : Network.TLS.Extension
 -- License     : BSD-style
@@ -45,6 +46,8 @@ module Network.TLS.Extension
     , HeartBeatMode(..)
     , SignatureAlgorithms(..)
     , SupportedVersions(..)
+    , KeyShare(..)
+    , KeyShareEntry(..)
     ) where
 
 import Control.Monad
@@ -374,3 +377,45 @@ instance Extension SupportedVersions where
         runGetMaybe $ do
             len <- getWord8
             SupportedVersions <$> getList (fromIntegral len) (getVersion' >>= \ver -> return (2, ver))
+
+data KeyShareEntry = KeyShareEntry Group ByteString
+    deriving (Show,Eq)
+
+getKeyShareEntry :: Get (Int, KeyShareEntry)
+getKeyShareEntry = do
+    g <- getWord16
+    case toGroup g of
+      Nothing -> fail ("unsupported group " ++ show g)
+      Just grp -> do
+          l <- fromIntegral <$> getWord16
+          key <- getBytes l
+          let !len = l + 4
+          return $ (len, KeyShareEntry grp key)
+
+putKeyShareEntry :: KeyShareEntry -> Put
+putKeyShareEntry (KeyShareEntry grp key) = do
+    putWord16 $ fromGroup grp
+    putWord16 $ fromIntegral $ B.length key
+    putBytes key
+
+data KeyShare =
+    KeyShareClientHello [KeyShareEntry]
+  | KeyShareServerHello KeyShareEntry
+  | KeyShareHRR Group
+    deriving (Show,Eq)
+
+instance Extension KeyShare where
+    extensionID _ = extensionID_KeyShare
+    extensionEncode (KeyShareClientHello kses) = runPut $ do
+        let !len = sum $ map (\(KeyShareEntry _ key) -> B.length key) kses
+        putWord16 $ fromIntegral len
+        mapM_ putKeyShareEntry kses
+    extensionEncode (KeyShareServerHello kse) = runPut $ putKeyShareEntry kse
+    extensionEncode (KeyShareHRR grp) = runPut $ putWord16 $ fromGroup grp
+    extensionDecode True  = runGetMaybe $ do
+        (_, ent) <- getKeyShareEntry
+        return $ KeyShareServerHello ent
+    extensionDecode False = runGetMaybe $ do
+        len <- fromIntegral <$> getWord16
+        grps <- getList len getKeyShareEntry
+        return $ KeyShareClientHello grps
