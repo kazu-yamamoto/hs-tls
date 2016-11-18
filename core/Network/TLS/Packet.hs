@@ -58,6 +58,8 @@ module Network.TLS.Packet
     , putSignatureHashAlgorithm
     , getVersion'
     , putVersion'
+    , putServerRandom32
+    , putExtensions
     ) where
 
 import Network.TLS.Imports

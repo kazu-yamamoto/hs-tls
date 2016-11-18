@@ -70,6 +70,7 @@ Library
                      Network.TLS.Extra.Cipher
   other-modules:     Network.TLS.Cap
                      Network.TLS.Struct
+                     Network.TLS.Struct2
                      Network.TLS.Core
                      Network.TLS.Context
                      Network.TLS.Context.Internal
@@ -90,6 +91,7 @@ Library
                      Network.TLS.Handshake.Process
                      Network.TLS.Handshake.Signature
                      Network.TLS.Handshake.State
+                     Network.TLS.Handshake.State2
                      Network.TLS.Hooks
                      Network.TLS.IO
                      Network.TLS.Imports
@@ -97,17 +99,23 @@ Library
                      Network.TLS.MAC
                      Network.TLS.Measurement
                      Network.TLS.Packet
+                     Network.TLS.Packet2
                      Network.TLS.Parameters
                      Network.TLS.Record
                      Network.TLS.Record.Types
+                     Network.TLS.Record.Types2
                      Network.TLS.Record.Engage
+                     Network.TLS.Record.Engage2
                      Network.TLS.Record.Disengage
+                     Network.TLS.Record.Disengage2
                      Network.TLS.Record.State
                      Network.TLS.RNG
                      Network.TLS.State
                      Network.TLS.Session
                      Network.TLS.Sending
+                     Network.TLS.Sending2
                      Network.TLS.Receiving
+                     Network.TLS.Receiving2
                      Network.TLS.Util
                      Network.TLS.Util.ASN1
                      Network.TLS.Util.Serialization

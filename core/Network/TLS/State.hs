@@ -59,6 +59,7 @@ module Network.TLS.State
 
 import Network.TLS.Imports
 import Network.TLS.Struct
+import Network.TLS.Struct2
 import Network.TLS.RNG
 import Network.TLS.Types (Role(..))
 import Network.TLS.Wire (GetContinuation)
@@ -80,6 +81,7 @@ data TLSState = TLSState
     , stExtensionNPN        :: Bool  -- NPN draft extension
     , stExtensionALPN       :: Bool  -- RFC 7301
     , stHandshakeRecordCont :: Maybe (GetContinuation (HandshakeType, Bytes))
+    , stHandshakeRecordCont2 :: Maybe (GetContinuation (HandshakeType2, Bytes))
     , stNegotiatedProtocol  :: Maybe B.ByteString -- NPN and ALPN protocol
     , stServerNextProtocolSuggest :: Maybe [B.ByteString]
     , stClientALPNSuggest   :: Maybe [B.ByteString]
@@ -115,6 +117,7 @@ newTLSState rng clientContext = TLSState
     , stExtensionNPN        = False
     , stExtensionALPN       = False
     , stHandshakeRecordCont = Nothing
+    , stHandshakeRecordCont2 = Nothing
     , stNegotiatedProtocol  = Nothing
     , stServerNextProtocolSuggest = Nothing
     , stClientALPNSuggest   = Nothing

@@ -50,6 +50,7 @@ module Network.TLS.Extension
     , KeyShareEntry(..)
     , SignatureScheme(..)
     , SignatureSchemes(..)
+    , encodeSignatureScheme
     ) where
 
 import Control.Monad
@@ -414,13 +415,16 @@ fromSignatureScheme SigScheme_RSApssSHA512    = 0x0806
 fromSignatureScheme SigScheme_Ed25519         = 0x0807
 fromSignatureScheme SigScheme_Ed448           = 0x0808
 
+encodeSignatureScheme :: SignatureScheme -> Put
+encodeSignatureScheme = putWord16 . fromSignatureScheme
+
 data SignatureSchemes = SignatureSchemes [SignatureScheme]
     deriving (Show,Eq)
 
 instance Extension SignatureSchemes where
     extensionID _ = extensionID_SignatureAlgorithms
     extensionEncode (SignatureSchemes algs) =
-        runPut $ putWord16 (fromIntegral (length algs * 2)) >> mapM_ (putWord16 . fromSignatureScheme) algs
+        runPut $ putWord16 (fromIntegral (length algs * 2)) >> mapM_ encodeSignatureScheme algs
     extensionDecode _ =
         runGetMaybe $ do
             len <- getWord16
