@@ -31,7 +31,7 @@ module Network.TLS.Extension
     , ApplicationLayerProtocolNegotiation(..)
     , EllipticCurvesSupported(..)
     , NamedCurve(..)
-    , CurveName(..)
+    , Group(..)
     , EcPointFormatsSupported(..)
     , EcPointFormat(..)
     , SessionTicket(..)
@@ -39,6 +39,7 @@ module Network.TLS.Extension
     , HeartBeatMode(..)
     , SignatureAlgorithms(..)
     , availableEllipticCurves
+    , fromNamedCurveToGroup
     ) where
 
 import Control.Monad
@@ -49,11 +50,12 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
 
-import Network.TLS.Extension.EC
+import Network.TLS.Crypto.Types
 import Network.TLS.Struct (ExtensionID, EnumSafe8(..), EnumSafe16(..), HashAndSignatureAlgorithm)
 import Network.TLS.Wire
 import Network.TLS.Imports
 import Network.TLS.Packet (putSignatureHashAlgorithm, getSignatureHashAlgorithm)
+import Network.TLS.Types
 
 type HostName = String
 
@@ -256,41 +258,12 @@ instance Extension ApplicationLayerProtocolNegotiation where
 data EllipticCurvesSupported = EllipticCurvesSupported [NamedCurve]
     deriving (Show,Eq)
 
-data NamedCurve =
-      SEC CurveName
-    | BrainPool BrainPoolCurve
-    | NamedCurve_arbitrary_explicit_prime_curves
-    | NamedCurve_arbitrary_explicit_char2_curves
-    deriving (Show,Eq)
-
-data BrainPoolCurve =
-      BrainPoolP512R1 -- 28
-    | BrainPoolP384R1 -- 27
-    | BrainPoolP256R1 -- 26
-    deriving (Show,Eq)
-
-availableEllipticCurves :: [NamedCurve]
-availableEllipticCurves = [SEC SEC_p256r1, SEC SEC_p521r1]
-
-instance EnumSafe16 NamedCurve where
-    fromEnumSafe16 NamedCurve_arbitrary_explicit_prime_curves = 0xFF01
-    fromEnumSafe16 NamedCurve_arbitrary_explicit_char2_curves = 0xFF02
-    fromEnumSafe16 (SEC nc) = maybe (error "named curve: internal error") id $ fromCurveName nc
-    fromEnumSafe16 (BrainPool BrainPoolP512R1) = 28
-    fromEnumSafe16 (BrainPool BrainPoolP384R1) = 27
-    fromEnumSafe16 (BrainPool BrainPoolP256R1) = 26
-    toEnumSafe16 0xFF01 = Just NamedCurve_arbitrary_explicit_prime_curves
-    toEnumSafe16 0xFF02 = Just NamedCurve_arbitrary_explicit_char2_curves
-    toEnumSafe16 26     = Just (BrainPool BrainPoolP256R1)
-    toEnumSafe16 27     = Just (BrainPool BrainPoolP384R1)
-    toEnumSafe16 28     = Just (BrainPool BrainPoolP512R1)
-    toEnumSafe16 n      = SEC <$> toCurveName n
-
 -- on decode, filter all unknown curves
 instance Extension EllipticCurvesSupported where
     extensionID _ = extensionID_EllipticCurves
-    extensionEncode (EllipticCurvesSupported curves) = runPut $ putWords16 $ map fromEnumSafe16 curves
-    extensionDecode _ = runGetMaybe (EllipticCurvesSupported . catMaybes . map toEnumSafe16 <$> getWords16)
+    extensionEncode (EllipticCurvesSupported curves) = runPut $ putWords16 $ map fromNamedCurve curves
+    extensionDecode _ = runGetMaybe (EllipticCurvesSupported . catMaybes . map toNamedCurve <$> getWords16)
+
 
 data EcPointFormatsSupported = EcPointFormatsSupported [EcPointFormat]
     deriving (Show,Eq)

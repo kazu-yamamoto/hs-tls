@@ -27,6 +27,7 @@ import Network.TLS.State
 import Network.TLS.Handshake.State
 import Network.TLS.Cipher
 import Network.TLS.Util
+import Network.TLS.Crypto.ECDH
 
 processPacket :: Context -> Record Plaintext -> IO (Either TLSError Packet)
 
@@ -41,12 +42,16 @@ processPacket ctx (Record ProtocolType_ChangeCipherSpec _ fragment) =
                        return $ Right ChangeCipherSpec
 
 processPacket ctx (Record ProtocolType_Handshake ver fragment) = do
-    keyxchg <- getHState ctx >>= \hs -> return $ (hs >>= hstPendingCipher >>= Just . cipherKeyExchange)
+    (keyxchg, mgrp) <- getHState ctx >>= \hs -> do
+        let mg = hs >>= hstECDHPrivate >>= Just . ecdhPrivateGroup
+            kx = hs >>= hstPendingCipher >>= Just . cipherKeyExchange
+        return (kx,mg)
     usingState ctx $ do
         npn     <- getExtensionNPN
         let currentParams = CurrentParams
                             { cParamsVersion     = ver
                             , cParamsKeyXchgType = keyxchg
+                            , cParamsECDHGroup   = mgrp
                             , cParamsSupportNPN  = npn
                             }
         -- get back the optional continuation, and parse as many handshake record as possible.

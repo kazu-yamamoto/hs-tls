@@ -309,22 +309,21 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
         generateSKX_DH_Anon = SKX_DH_Anon <$> setup_DHE
 
         setup_ECDHE curvename = do
-            let ecdhparams = ecdhParams curvename
-            (priv, pub) <- generateECDHE ctx ecdhparams
-
-            let serverParams = ServerECDHParams ecdhparams pub
-
+            (priv, pub) <- ecdhGenerateKeyPair $ fromNamedCurveToGroup curvename
+            let serverParams = ServerECDHParams pub
             usingHState ctx $ setServerECDHParams serverParams
-            usingHState ctx $ modify $ \hst -> hst { hstECDHPrivate = Just priv }
-            return (serverParams)
+            usingHState ctx $ modify $ \hst ->
+                hst { hstECDHPrivate = Just priv }
+            return serverParams
 
         generateSKX_ECDHE sigAlg = do
             ncs <- usingState_ ctx $ getClientEllipticCurveSuggest
             let common = availableEllipticCurves `intersect` fromJust "ClientEllipticCurveSuggest" ncs
                 -- FIXME: Currently maximum strength is chosen.
                 --        There may be a better way to choose EC.
-                nc = if null common then error "No common EllipticCurves"
-                                    else maximum $ map fromEnumSafe16 common
+                nc = case common of
+                  []  -> error "No common EllipticCurves"
+                  x:_ -> x
             serverParams <- setup_ECDHE nc
             signed       <- digitallySignECDHParams ctx serverParams sigAlg
             case sigAlg of

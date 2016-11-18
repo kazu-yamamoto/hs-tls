@@ -100,16 +100,12 @@ processClientKeyXchg ctx (CKX_DH clientDHValue) = do
     let premaster = dhGetShared (serverDHParamsToParams serverParams) dhpriv clientDHValue
     usingHState ctx $ setMasterSecretFromPre rver role premaster
 
-processClientKeyXchg ctx (CKX_ECDH clientECDHValue) = do
+processClientKeyXchg ctx (CKX_ECDH ecdhpub) = do
     rver <- usingState_ ctx getVersion
     role <- usingState_ ctx isClientContext
-
-    (ServerECDHParams ecdhparams _) <- fromJust "server ecdh params" <$> usingHState ctx (gets hstServerECDHParams)
-    ecdhpriv                      <- fromJust "ecdh private" <$> usingHState ctx (gets hstECDHPrivate)
-    case ecdhGetShared ecdhparams ecdhpriv clientECDHValue of
-        Nothing        -> throwCore $ Error_Protocol("invalid client public key", True, HandshakeFailure)
-        Just premaster ->
-            usingHState ctx $ setMasterSecretFromPre rver role premaster
+    ecdhpriv <- fromJust "ecdh private" <$> usingHState ctx (gets hstECDHPrivate)
+    let premaster = ecdhGetShared ecdhpub ecdhpriv
+    usingHState ctx $ setMasterSecretFromPre rver role premaster
 
 processClientFinished :: Context -> FinishedData -> IO ()
 processClientFinished ctx fdata = do

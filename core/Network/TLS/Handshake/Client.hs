@@ -217,14 +217,10 @@ sendClientData cparams ctx = sendCertificate >> sendClientKeyXchg >> sendCertifi
 
                 getCKX_ECDHE = do
                     xver <- usingState_ ctx getVersion
-                    (ServerECDHParams ecdhparams serverECDHPub) <- fromJust <$> usingHState ctx (gets hstServerECDHParams)
-                    (clientECDHPriv, clientECDHPub) <- generateECDHE ctx ecdhparams
-
-                    case ecdhGetShared ecdhparams clientECDHPriv serverECDHPub of
-                        Nothing        -> throwCore $ Error_Protocol ("invalid server public key", True, HandshakeFailure)
-                        Just premaster -> do
-                            usingHState ctx $ setMasterSecretFromPre xver ClientRole premaster
-                            return $ CKX_ECDH clientECDHPub
+                    ServerECDHParams serverECDHPub <- fromJust <$> usingHState ctx (gets hstServerECDHParams)
+                    (clientECDHPub, premaster) <- ecdhGetPubShared serverECDHPub
+                    usingHState ctx $ setMasterSecretFromPre xver ClientRole premaster
+                    return $ CKX_ECDH clientECDHPub
 
         -- In order to send a proper certificate verify message,
         -- we have to do the following:

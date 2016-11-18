@@ -276,7 +276,7 @@ serverDHParamsToPublic :: ServerDHParams -> DHPublic
 serverDHParamsToPublic serverParams =
     dhPublic (bigNumToInteger $ serverDHParams_y serverParams)
 
-data ServerECDHParams = ServerECDHParams ECDHParams ECDHPublic
+newtype ServerECDHParams = ServerECDHParams ECDHPublic
     deriving (Show,Eq)
 
 data ServerRSAParams = ServerRSAParams
