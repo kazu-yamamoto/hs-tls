@@ -91,13 +91,19 @@ data CurrentParams = CurrentParams
     } deriving (Show,Eq)
 
 {- marshall helpers -}
-getVersion' :: Get Version
-getVersion' = do
+getVersion :: Get Version
+getVersion = do
     major <- getWord8
     minor <- getWord8
     case verOfNum (major, minor) of
         Nothing -> fail ("invalid version : " ++ show major ++ "," ++ show minor)
         Just v  -> return v
+
+getVersion' :: Get (Maybe Version)
+getVersion' = do
+    major <- getWord8
+    minor <- getWord8
+    return $ verOfNum (major, minor)
 
 putVersion' :: Version -> Put
 putVersion' ver = putWord8 major >> putWord8 minor
@@ -124,7 +130,7 @@ getHandshakeType = do
  - decode and encode headers
  -}
 decodeHeader :: ByteString -> Either TLSError Header
-decodeHeader = runGetErr "header" $ liftM3 Header getHeaderType getVersion' getWord16
+decodeHeader = runGetErr "header" $ liftM3 Header getHeaderType getVersion getWord16
 
 decodeDeprecatedHeaderLength :: ByteString -> Either TLSError Word16
 decodeDeprecatedHeaderLength = runGetErr "deprecatedheaderlength" $ subtract 0x8000 <$> getWord16
@@ -133,7 +139,7 @@ decodeDeprecatedHeader :: Word16 -> ByteString -> Either TLSError Header
 decodeDeprecatedHeader size =
     runGetErr "deprecatedheader" $ do
         1 <- getWord8
-        version <- getVersion'
+        version <- getVersion
         return $ Header ProtocolType_DeprecatedHandshake version size
 
 encodeHeader :: Header -> ByteString
@@ -195,7 +201,7 @@ decodeDeprecatedHandshake :: ByteString -> Either TLSError Handshake
 decodeDeprecatedHandshake b = runGetErr "deprecatedhandshake" getDeprecated b
   where getDeprecated = do
             1 <- getWord8
-            ver <- getVersion'
+            ver <- getVersion
             cipherSpecLen <- fromEnum <$> getWord16
             sessionIdLen <- fromEnum <$> getWord16
             challengeLen <- fromEnum <$> getWord16
@@ -218,7 +224,7 @@ decodeHelloRequest = return HelloRequest
 
 decodeClientHello :: Get Handshake
 decodeClientHello = do
-    ver          <- getVersion'
+    ver          <- getVersion
     random       <- getClientRandom32
     session      <- getSession
     ciphers      <- getWords16
@@ -231,7 +237,7 @@ decodeClientHello = do
 
 decodeServerHello :: Get Handshake
 decodeServerHello = do
-    ver           <- getVersion'
+    ver           <- getVersion
     random        <- getServerRandom32
     session       <- getSession
     cipherid      <- getWord16
@@ -553,7 +559,7 @@ encodeChangeCipherSpec = runPut (putWord8 1)
 -- rsa pre master secret
 decodePreMasterSecret :: Bytes -> Either TLSError (Version, Bytes)
 decodePreMasterSecret = runGetErr "pre-master-secret" $ do
-    liftM2 (,) getVersion' (getBytes 46)
+    liftM2 (,) getVersion (getBytes 46)
 
 encodePreMasterSecret :: Version -> Bytes -> Bytes
 encodePreMasterSecret version bytes = runPut (putVersion' version >> putBytes bytes)

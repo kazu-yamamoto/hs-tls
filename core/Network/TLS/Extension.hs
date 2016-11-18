@@ -298,7 +298,6 @@ instance Extension SupportedGroups where
     extensionEncode (SupportedGroups groups) = runPut $ putWords16 $ map fromGroup groups
     extensionDecode _ = runGetMaybe (SupportedGroups . catMaybes . map toGroup <$> getWords16)
 
-
 data EcPointFormatsSupported = EcPointFormatsSupported [EcPointFormat]
     deriving (Show,Eq)
 
@@ -439,21 +438,20 @@ instance Extension SupportedVersions where
     extensionDecode _ =
         runGetMaybe $ do
             len <- getWord8
-            SupportedVersions <$> getList (fromIntegral len) (getVersion' >>= \ver -> return (2, ver))
+            SupportedVersions . catMaybes <$> getList (fromIntegral len) ((\ver -> (2, ver)) <$> getVersion')
 
 data KeyShareEntry = KeyShareEntry Group ByteString
     deriving (Show,Eq)
 
-getKeyShareEntry :: Get (Int, KeyShareEntry)
+getKeyShareEntry :: Get (Int, Maybe KeyShareEntry)
 getKeyShareEntry = do
     g <- getWord16
+    l <- fromIntegral <$> getWord16
+    key <- getBytes l
+    let !len = l + 4
     case toGroup g of
-      Nothing -> fail ("unsupported group " ++ show g)
-      Just grp -> do
-          l <- fromIntegral <$> getWord16
-          key <- getBytes l
-          let !len = l + 4
-          return $ (len, KeyShareEntry grp key)
+      Nothing  -> return (len, Nothing)
+      Just grp -> return (len, Just $ KeyShareEntry grp key)
 
 putKeyShareEntry :: KeyShareEntry -> Put
 putKeyShareEntry (KeyShareEntry grp key) = do
@@ -476,9 +474,11 @@ instance Extension KeyShare where
     extensionEncode (KeyShareServerHello kse) = runPut $ putKeyShareEntry kse
     extensionEncode (KeyShareHRR grp) = runPut $ putWord16 $ fromGroup grp
     extensionDecode True  = runGetMaybe $ do
-        (_, ent) <- getKeyShareEntry
-        return $ KeyShareServerHello ent
+        (_, ment) <- getKeyShareEntry
+        case ment of
+            Nothing  -> fail "decoding KeyShare"
+            Just ent -> return $ KeyShareServerHello ent
     extensionDecode False = runGetMaybe $ do
         len <- fromIntegral <$> getWord16
         grps <- getList len getKeyShareEntry
-        return $ KeyShareClientHello grps
+        return $ KeyShareClientHello $ catMaybes grps
