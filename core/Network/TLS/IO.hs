@@ -10,16 +10,24 @@
 module Network.TLS.IO
     ( checkValid
     , sendPacket
+    , sendPacket2
+    , writeHandshakePacket2
     , recvPacket
+    , recvPacket2
     ) where
 
 import Network.TLS.Context.Internal
 import Network.TLS.Struct
+import Network.TLS.Struct2
 import Network.TLS.Record
+import Network.TLS.Record.Types2
+import Network.TLS.Record.Disengage2
 import Network.TLS.Packet
 import Network.TLS.Hooks
 import Network.TLS.Sending
+import Network.TLS.Sending2
 import Network.TLS.Receiving
+import Network.TLS.Receiving2
 import qualified Data.ByteString as B
 import Data.ByteString.Char8 ()
 
@@ -120,3 +128,50 @@ sendPacket ctx pkt = do
             contextSend ctx dataToSend
   where isNonNullAppData (AppData b) = not $ B.null b
         isNonNullAppData _           = False
+
+sendPacket2 :: MonadIO m => Context -> Packet2 -> m ()
+sendPacket2 ctx pkt = do
+    edataToSend <- liftIO $ do
+                        withLog ctx $ \logging -> loggingPacketSent logging (show pkt)
+                        writePacket2 ctx pkt
+    case edataToSend of
+        Left err         -> throwCore err
+        Right dataToSend -> liftIO $ do
+            withLog ctx $ \logging -> loggingIOSent logging dataToSend
+            contextSend ctx dataToSend
+
+writeHandshakePacket2 :: MonadIO m => Context -> Handshake2 -> m Bytes
+writeHandshakePacket2 ctx hdsk = do
+    let pkt = Handshake2 [hdsk]
+    edataToSend <- liftIO $ do
+                        withLog ctx $ \logging -> loggingPacketSent logging (show pkt)
+                        writePacket2 ctx pkt
+    case edataToSend of
+        Left err         -> throwCore err
+        Right dataToSend -> liftIO $ do
+            withLog ctx $ \logging -> loggingIOSent logging dataToSend
+            return dataToSend
+
+recvRecord2 :: Context
+            -> IO (Either TLSError Record2)
+recvRecord2 ctx = readExact ctx 5 >>= either (return . Left) recvLength . decodeHeader
+  where recvLength header@(Header _ _ readlen)
+          | readlen > 16384 + 2048 = return $ Left maximumSizeExceeded
+          | otherwise              = readExact ctx (fromIntegral readlen) >>= getRecord header
+        maximumSizeExceeded = Error_Protocol ("record exceeding maximum size", True, RecordOverflow)
+        getRecord :: Header -> Bytes -> IO (Either TLSError Record2)
+        getRecord header content = do
+              liftIO $ withLog ctx $ \logging -> loggingIORecv logging header content
+              runRxState ctx $ disengageRecord2 $ rawToRecord2 header content
+
+recvPacket2 :: MonadIO m => Context -> m (Either TLSError Packet2)
+recvPacket2 ctx = liftIO $ do
+    erecord <- recvRecord2 ctx
+    case erecord of
+        Left err     -> return $ Left err
+        Right record -> do
+            pkt <- processPacket2 ctx record
+            case pkt of
+                Right p -> withLog ctx $ \logging -> loggingPacketRecv logging $ show p
+                _       -> return ()
+            return pkt

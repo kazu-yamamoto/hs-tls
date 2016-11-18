@@ -16,9 +16,11 @@ import Network.TLS.Imports
 import Network.TLS.Context.Internal
 import Network.TLS.Session
 import Network.TLS.Struct
+import Network.TLS.Struct2
 import Network.TLS.Cipher
 import Network.TLS.Compression
 import Network.TLS.Credentials
+import Network.TLS.Crypto
 import Network.TLS.Crypto.Types
 import Network.TLS.Crypto.ECDH
 import Network.TLS.Extension
@@ -31,9 +33,10 @@ import Network.TLS.Handshake.Process
 import Network.TLS.Handshake.Key
 import Network.TLS.Measurement
 import Data.Maybe (isJust, listToMaybe, mapMaybe)
-import Data.List (intersect, sortBy)
+import Data.List (intersect, sortOn, find)
 import qualified Data.ByteString as B
 import Data.ByteString.Char8 ()
+import Data.Ord (Down(..))
 
 import Control.Monad.State
 
@@ -41,6 +44,20 @@ import Network.TLS.Handshake.Signature
 import Network.TLS.Handshake.Common
 import Network.TLS.Handshake.Certificate
 import Network.TLS.X509
+
+import qualified Data.ByteArray as BA
+
+import Network.TLS.Packet
+import Network.TLS.Handshake.State2
+import Network.TLS.Sending2
+import Network.TLS.Receiving2
+import Network.TLS.Wire
+import Network.TLS.MAC
+import Network.TLS.KeySchedule
+import Network.TLS.Record.State
+
+import qualified Crypto.Hash.Algorithms as C
+import qualified Crypto.PubKey.RSA.PSS as C
 
 -- Put the server context in handshake mode.
 --
@@ -96,26 +113,50 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
     -- Handle Client hello
     processHandshake ctx clientHello
 
-    when (clientVersion == SSL2) $ throwCore $ Error_Protocol ("ssl2 is not supported", True, ProtocolVersion)
+    -- rejecting SSL2. RFC 6176
+    when (clientVersion == SSL2) $ throwCore $ Error_Protocol ("SSL 2.0 is not supported", True, ProtocolVersion)
+    -- rejecting SSL3. RFC 7568
+    -- when (clientVersion == SSL3) $ throwCore $ Error_Protocol ("SSL 3.0 is not supported", True, ProtocolVersion)
+
     -- Fallback SCSV: RFC7507
     -- TLS_FALLBACK_SCSV: {0x56, 0x00}
     when (supportedFallbackScsv (ctxSupported ctx) &&
           (0x5600 `elem` ciphers) &&
           clientVersion /= maxBound) $
         throwCore $ Error_Protocol ("fallback is not allowed", True, InappropriateFallback)
-    chosenVersion <- case findHighestVersionFrom clientVersion (supportedVersions $ ctxSupported ctx) of
+
+    -- choosing TLS version
+    let clientVersions = case extensionDecode False `fmap` (extensionLookup extensionID_SupportedVersions exts) of
+            Just (Just (SupportedVersions vers)) -> vers
+            _                                    -> []
+        serverVersions = supportedVersions $ ctxSupported ctx
+        mver
+          | clientVersion == TLS12 && clientVersions /= [] =
+                findHighestVersionFrom13 clientVersions serverVersions
+          | otherwise = findHighestVersionFrom clientVersion serverVersions
+
+    chosenVersion <- case mver of
                         Nothing -> throwCore $ Error_Protocol ("client version " ++ show clientVersion ++ " is not supported", True, ProtocolVersion)
                         Just v  -> return v
 
+    -- If compression is null, commonCompressions should be [0].
     when (null commonCompressions) $ throwCore $
         Error_Protocol ("no compression in common with the client", True, HandshakeFailure)
 
+    -- SNI (Server Name Indication)
     let serverName = case extensionDecode False `fmap` (extensionLookup extensionID_ServerName exts) of
             Just (Just (ServerName ns)) -> listToMaybe (mapMaybe toHostName ns)
                 where toHostName (ServerNameHostName hostName) = Just hostName
                       toHostName (ServerNameOther _)           = Nothing
             _                           -> Nothing
+    maybe (return ()) (usingState_ ctx . setClientSNI) serverName
 
+    -- ALPN (Application Layer Protocol Negotiation)
+    case extensionDecode False `fmap` (extensionLookup extensionID_ApplicationLayerProtocolNegotiation exts) of
+        Just (Just (ApplicationLayerProtocolNegotiation protos)) -> usingState_ ctx $ setClientALPNSuggest protos
+        _ -> return ()
+
+    -- choosing cipher suite
     extraCreds <- (onServerNameIndication $ serverHooks sparams) serverName
 
     let ciphersFilteredVersion = filter (cipherAllowedForVersion chosenVersion) (commonCiphers extraCreds)
@@ -125,41 +166,60 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
     when (commonCipherIDs extraCreds == []) $ throwCore $
         Error_Protocol ("no cipher in common with the client", True, HandshakeFailure)
 
-    cred <- case cipherKeyExchange usedCipher of
-                CipherKeyExchange_RSA     -> return $ credentialsFindForDecrypting creds
-                CipherKeyExchange_DH_Anon -> return $ Nothing
-                CipherKeyExchange_DHE_RSA -> return $ credentialsFindForSigning SignatureRSA creds
-                CipherKeyExchange_DHE_DSS -> return $ credentialsFindForSigning SignatureDSS creds
-                CipherKeyExchange_ECDHE_RSA -> return $ credentialsFindForSigning SignatureRSA creds
-                _                         -> throwCore $ Error_Protocol ("key exchange algorithm not implemented", True, HandshakeFailure)
+    -- TLS version dependent
+    if chosenVersion <= TLS12 then do
+        -- TLS 1.0, 1.1 and 1.2
+        cred <- case cipherKeyExchange usedCipher of
+                    CipherKeyExchange_RSA     -> return $ credentialsFindForDecrypting creds
+                    CipherKeyExchange_DH_Anon -> return $ Nothing
+                    CipherKeyExchange_DHE_RSA -> return $ credentialsFindForSigning SignatureRSA creds
+                    CipherKeyExchange_DHE_DSS -> return $ credentialsFindForSigning SignatureDSS creds
+                    CipherKeyExchange_ECDHE_RSA -> return $ credentialsFindForSigning SignatureRSA creds
+                    _                         -> throwCore $ Error_Protocol ("key exchange algorithm not implemented", True, HandshakeFailure)
 
-    resumeSessionData <- case clientSession of
-            (Session (Just clientSessionId)) -> liftIO $ sessionResume (sharedSessionManager $ ctxShared ctx) clientSessionId
-            (Session Nothing)                -> return Nothing
+        resumeSessionData <- case clientSession of
+                (Session (Just clientSessionId)) -> liftIO $ sessionResume (sharedSessionManager $ ctxShared ctx) clientSessionId
+                (Session Nothing)                -> return Nothing
 
-    maybe (return ()) (usingState_ ctx . setClientSNI) serverName
+        case extensionDecode False `fmap` (extensionLookup extensionID_Groups exts) of
+            Just (Just (SupportedGroups es)) -> usingState_ ctx $ setClientGroupSuggest es
+            _ -> return ()
 
-    case extensionDecode False `fmap` (extensionLookup extensionID_ApplicationLayerProtocolNegotiation exts) of
-        Just (Just (ApplicationLayerProtocolNegotiation protos)) -> usingState_ ctx $ setClientALPNSuggest protos
-        _ -> return ()
+        -- Currently, we don't send back EcPointFormats. In this case,
+        -- the client chooses EcPointFormat_Uncompressed.
+        case extensionDecode False `fmap` (extensionLookup extensionID_EcPointFormats exts) of
+            Just (Just (EcPointFormatsSupported fs)) -> usingState_ ctx $ setClientEcPointFormatSuggest fs
+            _ -> return ()
 
-    case extensionDecode False `fmap` (extensionLookup extensionID_Groups exts) of
-        Just (Just (SupportedGroups es)) -> usingState_ ctx $ setClientGroupSuggest es
-        _ -> return ()
+        doHandshake sparams cred ctx chosenVersion usedCipher usedCompression clientSession resumeSessionData exts
 
-    -- Currently, we don't send back EcPointFormats. In this case,
-    -- the client chooses EcPointFormat_Uncompressed.
-    case extensionDecode False `fmap` (extensionLookup extensionID_EcPointFormats exts) of
-        Just (Just (EcPointFormatsSupported fs)) -> usingState_ ctx $ setClientEcPointFormatSuggest fs
-        _ -> return ()
-
-    doHandshake sparams cred ctx chosenVersion usedCipher usedCompression clientSession resumeSessionData exts
-
+      else do
+        -- TLS 1.3 or later
+        -- Deciding key exchange from key shares
+        let keyShares = case extensionDecode False `fmap` (extensionLookup extensionID_KeyShare exts) of
+              Just (Just (KeyShareClientHello kses)) -> kses
+              _                                      -> []
+        Just keyShare <- case keyShares of -- fixme
+          [] -> throwCore $ Error_Protocol ("key exchange not implemented", True, HandshakeFailure) -- fixme
+          ks -> return $ findKeyShare ks $ supportedGroups $ ctxSupported ctx
+        -- Deciding signature algorithm
+        let sigAlgos = case extensionDecode False `fmap` (extensionLookup extensionID_SignatureAlgorithms exts) of
+              Just (Just (SignatureSchemes hss)) -> hss
+              _                                  -> []
+        (cred, sigAlgo) <- case credentialsFindForTLS13 sigAlgos creds of
+          Nothing -> throwCore $ Error_Protocol ("signature algorithm not implemented", True, HandshakeFailure) -- fixme
+          Just c  -> return c
+        let usedHash = cipherHash usedCipher
+        doHandshake2 sparams cred ctx chosenVersion usedCipher usedHash keyShare sigAlgo
   where
         commonCipherIDs extra = intersect ciphers (map cipherID $ (ctxCiphers ctx extra))
         commonCiphers   extra = filter (flip elem (commonCipherIDs extra) . cipherID) (ctxCiphers ctx extra)
         commonCompressions    = compressionIntersectID (supportedCompressions $ ctxSupported ctx) compressions
         usedCompression       = head commonCompressions
+        findKeyShare _      [] = Nothing
+        findKeyShare ks (n:ns) = case find (\(KeyShareEntry n' _) -> n == n') ks of
+          Just k  -> Just k
+          Nothing -> findKeyShare ks ns
 
 
 handshakeServerWith _ _ _ = throwCore $ Error_Protocol ("unexpected handshake message received in handshakeServerWith", True, HandshakeFailure)
@@ -437,8 +497,116 @@ recvClientData sparams ctx = runRecvState ctx (RecvStateHandshake processClientC
                 Just cc | isNullCertificateChain cc -> throwCore throwerror
                         | otherwise                 -> return ()
 
+doHandshake2 :: ServerParams -> Credential -> Context -> Version
+             -> Cipher -> Hash -> KeyShareEntry -> SignatureScheme
+             -> IO ()
+doHandshake2 _sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo = do
+    handshakeSendServerData
+  where
+    handshakeSendServerData = do
+        serverSession <- newSession ctx
+        usingState_ ctx (setSession serverSession False)
+        (share, kex) <- makeShare
+        helo <- makeServerHello kex >>= writeHandshakePacket2 ctx
+        setHandshakeKey share
+        switchTxEncryption ctx
+        switchRxEncryption ctx
+        eext <- writeHandshakePacket2 ctx $ EncryptedExtensions2 []
+        cert <- writeHandshakePacket2 ctx $ Certificate2 "" certChain
+        vrfy <- makeCertVerify >>= writeHandshakePacket2 ctx
+        fish <- makeFinished >>= writeHandshakePacket2 ctx
+        contextSend ctx $ B.concat [helo, eext, cert, vrfy, fish]
+        recvPacket2 ctx >>= verifyFinished
+        setApplicationKey
+        switchTxEncryption ctx
+        switchRxEncryption ctx
+        setEstablished ctx True
+
+    makeShare = case grp of
+        P256   -> setup_ECDHE
+        P384   -> setup_ECDHE
+        P521   -> setup_ECDHE
+        X25519 -> setup_ECDHE
+        _      -> error $ "makeShare: " ++ show grp
+
+    setup_ECDHE = do
+        let yourpub = decodeECDHPublic grp bytes
+        (mypub, share) <- ecdhGetPubShared yourpub
+        let (_, bytes') = encodeECDHPublic mypub
+            keyShare = KeyShareEntry grp bytes'
+        return (BA.convert share, keyShare)
+
+    makeServerHello keyShare = do
+        srand <- ServerRandom <$> getStateRNG ctx 32
+        usingHState ctx $ setPrivateKey privKey
+        usingState_ ctx (setVersion chosenVersion)
+        usingHState ctx $ setServerHelloParameters2 srand usedCipher
+        let serverKeyShare = extensionEncode $ KeyShareServerHello keyShare
+            ext = ExtensionRaw extensionID_KeyShare serverKeyShare
+        return $ ServerHello2 chosenVersion srand (cipherID usedCipher) [ext]
+
+    setHandshakeKey share = do
+        let earlySecret = makeEarlySecret usedCipher
+        usingHState ctx $ setMasterSecret2 ServerRole
+                                           earlySecret
+                                           share
+                                           "client handshake traffic secret"
+                                           "server handshake traffic secret"
+    setApplicationKey = do
+        Just handshakeSecret <- usingHState ctx $ gets hstMasterSecret
+        usingHState ctx $ setMasterSecret2 ServerRole
+                                           handshakeSecret
+                                           (B.pack $ replicate (hashDigestSize usedHash) 0)
+                                           "client application traffic secret"
+                                           "server application traffic secret"
+    makeCertVerify = do
+        hashValue <- getHandshakeContextHash
+        let toBeSinged = runPut $ do
+                putBytes $ B.pack $ replicate 64 32
+                putBytes "TLS 1.3, server CertificateVerify"
+                putWord8 0
+                putBytes hashValue
+            PrivKeyRSA rsaPriv = privKey
+        -- fixme
+        Right signed <- C.sign Nothing (C.defaultPSSParams C.SHA256) rsaPriv toBeSinged
+        return $ CertVerify2 sigAlgo signed
+
+    makeFinished = Finished2 <$> makeVerifyData True
+
+    verifyFinished (Right (Handshake2 [Finished2 verifyData])) = do
+        verifyData' <- makeVerifyData False
+        when (verifyData /= verifyData') $
+            throwCore $ Error_Protocol ("finished verification failed", True, HandshakeFailure)
+    verifyFinished _ = error "verifyFinished" -- fixme
+
+    makeVerifyData isServer = do
+        -- dirty hack: cstMacSecret is used for traffic key
+        let getKey
+              | isServer  = fromJust "tx-state" <$> gets hstPendingTxState
+              | otherwise = fromJust "rx-state" <$> gets hstPendingRxState
+        baseKey <- cstMacSecret . stCryptState <$> usingHState ctx getKey
+        hashValue <- getHandshakeContextHash
+        let prk = fromByteStringToPRKey usedHash baseKey
+            size = hashDigestSize usedHash
+            finishedKey = hkdfExpandLabel prk "finished" "" size
+        return $ hmac usedHash finishedKey hashValue
+
+    getHandshakeContextHash = do
+        Just hst <- getHState ctx -- fixme
+        case hstHandshakeDigest hst of
+          Right hashCtx -> return $ hashFinal hashCtx
+          Left _        -> error "un-initialized handshake digest"
+
 findHighestVersionFrom :: Version -> [Version] -> Maybe Version
 findHighestVersionFrom clientVersion allowedVersions =
-    case filter (clientVersion >=) $ reverse $ sortBy compare allowedVersions of
+    case filter (clientVersion >=) $ sortOn Down allowedVersions of
         []  -> Nothing
         v:_ -> Just v
+
+findHighestVersionFrom13 :: [Version] -> [Version] -> Maybe Version
+findHighestVersionFrom13 clientVersions serverVersions = case svs `intersect` cvs of
+        []  -> Nothing
+        v:_ -> Just v
+  where
+    svs = sortOn Down serverVersions
+    cvs = sortOn Down clientVersions

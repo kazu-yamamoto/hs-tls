@@ -31,6 +31,7 @@ module Network.TLS.Core
 
 import Network.TLS.Context
 import Network.TLS.Struct
+import Network.TLS.Struct2
 import Network.TLS.State (getSession)
 import Network.TLS.Parameters
 import Network.TLS.IO
@@ -46,13 +47,25 @@ import qualified Control.Exception as E
 import Control.Monad.State
 
 
+tls13orLater :: MonadIO m => Context -> m Bool
+tls13orLater ctx = do
+    ev <- liftIO $ usingState ctx S.getVersion
+    return $ case ev of
+               Left  _ -> False
+               Right v -> v >= TLS13ID16
+
 -- | notify the context that this side wants to close connection.
 -- this is important that it is called before closing the handle, otherwise
 -- the session might not be resumable (for version < TLS1.2).
 --
 -- this doesn't actually close the handle
 bye :: MonadIO m => Context -> m ()
-bye ctx = sendPacket ctx $ Alert [(AlertLevel_Warning, CloseNotify)]
+bye ctx = do
+    tls13 <- tls13orLater ctx
+    if tls13 then
+        sendPacket2 ctx $ Alert2 [(AlertLevel_Warning, CloseNotify)]
+      else
+        sendPacket ctx $ Alert [(AlertLevel_Warning, CloseNotify)]
 
 -- | If the Next Protocol Negotiation or ALPN extensions have been used, this will
 -- return get the protocol agreed upon.
@@ -69,18 +82,28 @@ getClientSNI ctx = liftIO $ usingState_ ctx S.getClientSNI
 -- | sendData sends a bunch of data.
 -- It will automatically chunk data to acceptable packet size
 sendData :: MonadIO m => Context -> L.ByteString -> m ()
-sendData ctx dataToSend = liftIO (checkValid ctx) >> mapM_ sendDataChunk (L.toChunks dataToSend)
-  where sendDataChunk d
+sendData ctx dataToSend = do
+    tls13 <- tls13orLater ctx
+    let sendP
+          | tls13     = sendPacket2 ctx . AppData2
+          | otherwise = sendPacket ctx . AppData
+    let sendDataChunk d
             | B.length d > 16384 = do
                 let (sending, remain) = B.splitAt 16384 d
-                sendPacket ctx $ AppData sending
+                sendP sending
                 sendDataChunk remain
-            | otherwise = sendPacket ctx $ AppData d
+            | otherwise = sendP d
+    liftIO (checkValid ctx) >> mapM_ sendDataChunk (L.toChunks dataToSend)
 
 -- | recvData get data out of Data packet, and automatically renegotiate if
 -- a Handshake ClientHello is received
 recvData :: MonadIO m => Context -> m B.ByteString
-recvData ctx = liftIO $ do
+recvData ctx = do
+    tls13 <- tls13orLater ctx
+    if tls13 then recvData2 ctx else recvData1 ctx
+
+recvData1 :: MonadIO m => Context -> m B.ByteString
+recvData1 ctx = liftIO $ do
     checkValid ctx
     E.catchJust safeHandleError_EOF
                 doRecv
@@ -98,9 +121,9 @@ recvData ctx = liftIO $ do
             terminate err AlertLevel_Fatal InternalError (show err)
 
         process (Handshake [ch@(ClientHello {})]) =
-            withRWLock ctx ((ctxDoHandshakeWith ctx) ctx ch) >> recvData ctx
+            withRWLock ctx ((ctxDoHandshakeWith ctx) ctx ch) >> recvData1 ctx
         process (Handshake [hr@HelloRequest]) =
-            withRWLock ctx ((ctxDoHandshakeWith ctx) ctx hr) >> recvData ctx
+            withRWLock ctx ((ctxDoHandshakeWith ctx) ctx hr) >> recvData1 ctx
 
         process (Alert [(AlertLevel_Warning, CloseNotify)]) = tryBye >> setEOF ctx >> return B.empty
         process (Alert [(AlertLevel_Fatal, desc)]) = do
@@ -108,10 +131,54 @@ recvData ctx = liftIO $ do
             E.throwIO (Terminated True ("received fatal error: " ++ show desc) (Error_Protocol ("remote side fatal error", True, desc)))
 
         -- when receiving empty appdata, we just retry to get some data.
-        process (AppData "") = recvData ctx
+        process (AppData "") = recvData1 ctx
         process (AppData x)  = return x
         process p            = let reason = "unexpected message " ++ show p in
                                terminate (Error_Misc reason) AlertLevel_Fatal UnexpectedMessage reason
+
+        terminate :: TLSError -> AlertLevel -> AlertDescription -> String -> IO a
+        terminate err level desc reason = do
+            session <- usingState_ ctx getSession
+            case session of
+                Session Nothing    -> return ()
+                Session (Just sid) -> sessionInvalidate (sharedSessionManager $ ctxShared ctx) sid
+            catchException (sendPacket ctx $ Alert [(level, desc)]) (\_ -> return ())
+            setEOF ctx
+            E.throwIO (Terminated False reason err)
+
+        -- the other side could have close the connection already, so wrap
+        -- this in a try and ignore all exceptions
+        tryBye = catchException (bye ctx) (\_ -> return ())
+
+recvData2 :: MonadIO m => Context -> m B.ByteString
+recvData2 ctx = liftIO $ do
+    checkValid ctx
+    E.catchJust safeHandleError_EOF
+                doRecv
+                (\() -> return B.empty)
+  where doRecv = do
+            pkt <- withReadLock ctx $ recvPacket2 ctx
+            either onError process pkt
+
+        safeHandleError_EOF Error_EOF = Just ()
+        safeHandleError_EOF _ = Nothing
+
+        onError err@(Error_Protocol (reason,fatal,desc)) =
+            terminate err (if fatal then AlertLevel_Fatal else AlertLevel_Warning) desc reason
+        onError err =
+            terminate err AlertLevel_Fatal InternalError (show err)
+
+        -- fixme
+        process (Alert2 [(AlertLevel_Warning, CloseNotify)]) = tryBye >> setEOF ctx >> return B.empty
+        process (Alert2 [(AlertLevel_Fatal, desc)]) = do
+            setEOF ctx
+            E.throwIO (Terminated True ("received fatal error: " ++ show desc) (Error_Protocol ("remote side fatal error", True, desc)))
+
+        -- when receiving empty appdata, we just retry to get some data.
+        process (AppData2 "") = recvData2 ctx
+        process (AppData2 x)  = return x
+        process p             = let reason = "unexpected message " ++ show p in
+                                terminate (Error_Misc reason) AlertLevel_Fatal UnexpectedMessage reason
 
         terminate :: TLSError -> AlertLevel -> AlertDescription -> String -> IO a
         terminate err level desc reason = do
