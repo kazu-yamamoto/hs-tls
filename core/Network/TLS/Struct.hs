@@ -202,6 +202,7 @@ data AlertLevel =
 
 data AlertDescription =
       CloseNotify
+    | EndOfEarlyData
     | UnexpectedMessage
     | BadRecordMac
     | DecryptionFailed       -- ^ deprecated alert, should never be sent by compliant implementation
@@ -225,11 +226,14 @@ data AlertDescription =
     | InappropriateFallback -- RFC7507
     | UserCanceled
     | NoRenegotiation
+    | MissingExtension
     | UnsupportedExtension
     | CertificateUnobtainable
     | UnrecognizedName
     | BadCertificateStatusResponse
     | BadCertificateHashValue
+    | UnknownPskIdentity
+    | CertificateRequired
     deriving (Show,Eq)
 
 data HandshakeType =
@@ -441,6 +445,7 @@ instance TypeValuable AlertLevel where
 
 instance TypeValuable AlertDescription where
     valOfType CloseNotify            = 0
+    valOfType EndOfEarlyData         = 1
     valOfType UnexpectedMessage      = 10
     valOfType BadRecordMac           = 20
     valOfType DecryptionFailed       = 21
@@ -464,13 +469,17 @@ instance TypeValuable AlertDescription where
     valOfType InappropriateFallback  = 86
     valOfType UserCanceled           = 90
     valOfType NoRenegotiation        = 100
+    valOfType MissingExtension       = 109
     valOfType UnsupportedExtension   = 110
     valOfType CertificateUnobtainable = 111
     valOfType UnrecognizedName        = 112
     valOfType BadCertificateStatusResponse = 113
     valOfType BadCertificateHashValue = 114
+    valOfType UnknownPskIdentity      = 115
+    valOfType CertificateRequired     = 116
 
     valToType 0   = Just CloseNotify
+    valToType 1   = Just EndOfEarlyData
     valToType 10  = Just UnexpectedMessage
     valToType 20  = Just BadRecordMac
     valToType 21  = Just DecryptionFailed
@@ -494,11 +503,14 @@ instance TypeValuable AlertDescription where
     valToType 86  = Just InappropriateFallback
     valToType 90  = Just UserCanceled
     valToType 100 = Just NoRenegotiation
+    valToType 109 = Just MissingExtension
     valToType 110 = Just UnsupportedExtension
     valToType 111 = Just CertificateUnobtainable
     valToType 112 = Just UnrecognizedName
     valToType 113 = Just BadCertificateStatusResponse
     valToType 114 = Just BadCertificateHashValue
+    valToType 115 = Just UnknownPskIdentity
+    valToType 116 = Just CertificateRequired
     valToType _   = Nothing
 
 instance TypeValuable CertificateType where
