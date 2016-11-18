@@ -15,16 +15,18 @@ module Network.TLS.Credentials
     , credentialsFindForSigning
     , credentialsFindForDecrypting
     , credentialsListSigningAlgorithms
+    , credentialsFindForTLS13
     ) where
 
-import Data.Monoid
+import Data.Function (on)
 import Data.Maybe (catMaybes)
-import Data.List (find)
-import Network.TLS.Struct
+import Data.List (find, groupBy)
+import Network.TLS.Struct as S
 import Network.TLS.X509
 import Data.X509.File
 import Data.X509.Memory
 import Data.X509
+import Network.TLS.Extension (SignatureScheme(..))
 
 type Credential = (CertificateChain, PrivKey)
 
@@ -125,3 +127,50 @@ getSignatureAlg pub priv =
         (PubKeyDSA _, PrivKeyDSA _)     -> Just SignatureDSS
         --(PubKeyECDSA _, PrivKeyECDSA _) -> Just SignatureECDSA
         _                               -> Nothing
+
+
+data SigAlg = SigAlg_RSApss
+            | SigAlg_ECDSA
+            | SigAlg_Ed25519
+            | SigAlg_Ed448
+            deriving (Eq,Show)
+
+splitSignatureScheme :: SignatureScheme -> (SigAlg,HashAlgorithm)
+splitSignatureScheme SigScheme_RSApkcs1SHA1    = (SigAlg_RSApss, S.HashSHA1)
+splitSignatureScheme SigScheme_RSApkcs1SHA256  = (SigAlg_RSApss, S.HashSHA256)
+splitSignatureScheme SigScheme_RSApkcs1SHA384  = (SigAlg_RSApss, S.HashSHA384)
+splitSignatureScheme SigScheme_RSApkcs1SHA512  = (SigAlg_RSApss, S.HashSHA512)
+splitSignatureScheme SigScheme_ECDSAp256SHA256 = (SigAlg_ECDSA,  S.HashSHA256)
+splitSignatureScheme SigScheme_ECDSAp384SHA384 = (SigAlg_ECDSA,  S.HashSHA384)
+splitSignatureScheme SigScheme_ECDSAp512SHA512 = (SigAlg_ECDSA,  S.HashSHA512)
+splitSignatureScheme SigScheme_RSApssSHA256    = (SigAlg_RSApss, S.HashSHA256)
+splitSignatureScheme SigScheme_RSApssSHA384    = (SigAlg_RSApss, S.HashSHA384)
+splitSignatureScheme SigScheme_RSApssSHA512    = (SigAlg_RSApss, S.HashSHA512)
+splitSignatureScheme SigScheme_Ed25519         = (SigAlg_Ed25519,S.HashNone)
+splitSignatureScheme SigScheme_Ed448           = (SigAlg_Ed448,  S.HashNone)
+
+catToSignatureScheme :: (SigAlg,HashAlgorithm) -> SignatureScheme
+catToSignatureScheme (SigAlg_RSApss, S.HashSHA1)   = SigScheme_RSApkcs1SHA1 -- fixme
+catToSignatureScheme (SigAlg_RSApss, S.HashSHA256) = SigScheme_RSApssSHA256
+catToSignatureScheme (SigAlg_RSApss, S.HashSHA384) = SigScheme_RSApssSHA384
+catToSignatureScheme (SigAlg_RSApss, S.HashSHA512) = SigScheme_RSApssSHA512
+catToSignatureScheme (SigAlg_ECDSA,  S.HashSHA256) = SigScheme_ECDSAp256SHA256
+catToSignatureScheme (SigAlg_ECDSA,  S.HashSHA384) = SigScheme_ECDSAp384SHA384
+catToSignatureScheme (SigAlg_ECDSA,  S.HashSHA512) = SigScheme_ECDSAp512SHA512
+catToSignatureScheme (SigAlg_Ed25519,S.HashNone)   = SigScheme_Ed25519
+catToSignatureScheme (SigAlg_Ed448,  S.HashNone)   = SigScheme_Ed448
+catToSignatureScheme _                             = error "catToSignatureScheme"
+
+credentialsFindForTLS13 :: [SignatureScheme]
+                        -> Credentials
+                        -> Maybe (Credential,SignatureScheme)
+credentialsFindForTLS13 sss (Credentials creds) = go shs
+  where
+    shs = map head $ groupBy ((==) `on` fst) $ map splitSignatureScheme sss
+    go []     = Nothing
+    go (sh@(s,_):shs') = case find (match s) creds of
+      Nothing   -> go shs'
+      Just cred -> Just (cred, catToSignatureScheme sh)
+    -- fixme: this is incomplete due to EC
+    match SigAlg_RSApss (_, PrivKeyRSA _) = True
+    match _             _                 = False
