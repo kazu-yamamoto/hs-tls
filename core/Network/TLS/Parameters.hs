@@ -33,6 +33,7 @@ import Network.TLS.Cipher
 import Network.TLS.Measurement
 import Network.TLS.Compression
 import Network.TLS.Crypto
+import Network.TLS.Crypto.Types
 import Network.TLS.Credentials
 import Network.TLS.X509
 import Network.TLS.RNG (Seed)
@@ -174,6 +175,8 @@ data Supported = Supported
       -- 'False', empty packets will never be added, which is less secure, but might help in rare
       -- cases.
     , supportedEmptyPacket         :: Bool
+      -- | A list of supported elliptic curves in the preferred order.
+    , supportedGroups              :: [Group]
     } deriving (Show,Eq)
 
 defaultSupported :: Supported
@@ -193,6 +196,7 @@ defaultSupported = Supported
     , supportedSession             = True
     , supportedFallbackScsv        = True
     , supportedEmptyPacket         = True
+    , supportedGroups              = [P256,P384,P521]
     }
 
 instance Default Supported where

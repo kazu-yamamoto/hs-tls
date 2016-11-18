@@ -506,9 +506,12 @@ getServerECDHParams = do
         2 -> -- explicit_char2
             error "cannot handle explicit char2 ECDH Params"
         3 -> do -- ECParameters ECCurveType: curve name type
-            grp <- toGroup <$> getWord16  -- ECParameters NamedCurve
-            pub <- decodeECDHPublic grp <$> getOpaque8 -- ECPoint
-            return $ ServerECDHParams pub
+            mgrp <- toGroup <$> getWord16  -- ECParameters NamedCurve
+            case mgrp of
+                Nothing -> error "unsupported group"
+                Just grp -> do
+                    pub <- decodeECDHPublic grp <$> getOpaque8 -- ECPoint
+                    return $ ServerECDHParams pub
         _ ->
             error "unknown type for ECDH Params"
 

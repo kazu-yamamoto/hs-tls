@@ -17,7 +17,7 @@ module Network.TLS.Extension
     , extensionID_SecureRenegotiation
     , extensionID_NextProtocolNegotiation
     , extensionID_ApplicationLayerProtocolNegotiation
-    , extensionID_EllipticCurves
+    , extensionID_Groups
     , extensionID_EcPointFormats
     , extensionID_Heartbeat
     , extensionID_SignatureAlgorithms
@@ -29,8 +29,7 @@ module Network.TLS.Extension
     , SecureRenegotiation(..)
     , NextProtocolNegotiation(..)
     , ApplicationLayerProtocolNegotiation(..)
-    , EllipticCurvesSupported(..)
-    , NamedCurve(..)
+    , SupportedGroups(..)
     , Group(..)
     , EcPointFormatsSupported(..)
     , EcPointFormat(..)
@@ -38,8 +37,6 @@ module Network.TLS.Extension
     , HeartBeat(..)
     , HeartBeatMode(..)
     , SignatureAlgorithms(..)
-    , availableEllipticCurves
-    , fromNamedCurveToGroup
     ) where
 
 import Control.Monad
@@ -70,7 +67,7 @@ extensionID_ServerName
   , extensionID_ClientAuthz
   , extensionID_ServerAuthz
   , extensionID_CertType
-  , extensionID_EllipticCurves
+  , extensionID_Groups
   , extensionID_EcPointFormats
   , extensionID_SRP
   , extensionID_SignatureAlgorithms
@@ -97,7 +94,7 @@ extensionID_UserMapping                         = 0x6 -- RFC4681
 extensionID_ClientAuthz                         = 0x7 -- RFC5878
 extensionID_ServerAuthz                         = 0x8 -- RFC5878
 extensionID_CertType                            = 0x9 -- RFC6091
-extensionID_EllipticCurves                      = 0xa -- RFC4492
+extensionID_Groups                              = 0xa -- RFC4492
 extensionID_EcPointFormats                      = 0xb -- RFC4492
 extensionID_SRP                                 = 0xc -- RFC5054
 extensionID_SignatureAlgorithms                 = 0xd -- RFC5246
@@ -127,7 +124,7 @@ definedExtensions =
     , extensionID_ClientAuthz
     , extensionID_ServerAuthz
     , extensionID_CertType
-    , extensionID_EllipticCurves
+    , extensionID_Groups
     , extensionID_EcPointFormats
     , extensionID_SRP
     , extensionID_SignatureAlgorithms
@@ -153,7 +150,7 @@ supportedExtensions = [ extensionID_ServerName
                       , extensionID_ApplicationLayerProtocolNegotiation
                       , extensionID_SecureRenegotiation
                       , extensionID_NextProtocolNegotiation
-                      , extensionID_EllipticCurves
+                      , extensionID_Groups
                       , extensionID_EcPointFormats
                       , extensionID_SignatureAlgorithms
                       ]
@@ -255,14 +252,14 @@ instance Extension ApplicationLayerProtocolNegotiation where
                      0 -> return []
                      _ -> (:) <$> getOpaque8 <*> getALPN'
 
-data EllipticCurvesSupported = EllipticCurvesSupported [NamedCurve]
+data SupportedGroups = SupportedGroups [Group]
     deriving (Show,Eq)
 
 -- on decode, filter all unknown curves
-instance Extension EllipticCurvesSupported where
-    extensionID _ = extensionID_EllipticCurves
-    extensionEncode (EllipticCurvesSupported curves) = runPut $ putWords16 $ map fromNamedCurve curves
-    extensionDecode _ = runGetMaybe (EllipticCurvesSupported . catMaybes . map toNamedCurve <$> getWords16)
+instance Extension SupportedGroups where
+    extensionID _ = extensionID_Groups
+    extensionEncode (SupportedGroups groups) = runPut $ putWords16 $ map fromGroup groups
+    extensionDecode _ = runGetMaybe (SupportedGroups . catMaybes . map toGroup <$> getWords16)
 
 
 data EcPointFormatsSupported = EcPointFormatsSupported [EcPointFormat]

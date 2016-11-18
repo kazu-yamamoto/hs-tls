@@ -19,6 +19,7 @@ import Network.TLS.Struct
 import Network.TLS.Cipher
 import Network.TLS.Compression
 import Network.TLS.Credentials
+import Network.TLS.Crypto.Types
 import Network.TLS.Crypto.ECDH
 import Network.TLS.Extension
 import Network.TLS.Util (catchException, fromJust)
@@ -142,8 +143,8 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
         Just (Just (ApplicationLayerProtocolNegotiation protos)) -> usingState_ ctx $ setClientALPNSuggest protos
         _ -> return ()
 
-    case extensionDecode False `fmap` (extensionLookup extensionID_EllipticCurves exts) of
-        Just (Just (EllipticCurvesSupported es)) -> usingState_ ctx $ setClientEllipticCurveSuggest es
+    case extensionDecode False `fmap` (extensionLookup extensionID_Groups exts) of
+        Just (Just (SupportedGroups es)) -> usingState_ ctx $ setClientGroupSuggest es
         _ -> return ()
 
     -- Currently, we don't send back EcPointFormats. In this case,
@@ -308,8 +309,8 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
 
         generateSKX_DH_Anon = SKX_DH_Anon <$> setup_DHE
 
-        setup_ECDHE curvename = do
-            (priv, pub) <- ecdhGenerateKeyPair $ fromNamedCurveToGroup curvename
+        setup_ECDHE grp = do
+            (priv, pub) <- ecdhGenerateKeyPair grp
             let serverParams = ServerECDHParams pub
             usingHState ctx $ setServerECDHParams serverParams
             usingHState ctx $ modify $ \hst ->
@@ -317,14 +318,12 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
             return serverParams
 
         generateSKX_ECDHE sigAlg = do
-            ncs <- usingState_ ctx $ getClientEllipticCurveSuggest
-            let common = availableEllipticCurves `intersect` fromJust "ClientEllipticCurveSuggest" ncs
-                -- FIXME: Currently maximum strength is chosen.
-                --        There may be a better way to choose EC.
-                nc = case common of
-                  []  -> error "No common EllipticCurves"
-                  x:_ -> x
-            serverParams <- setup_ECDHE nc
+            grps <- usingState_ ctx $ getClientGroupSuggest
+            let common = (supportedGroups $ ctxSupported ctx) `intersect` availableEllipticGroups `intersect` fromJust "ClientEllipticCurveSuggest" grps
+                grp = case common of
+                    []  -> error "No common EllipticCurves"
+                    x:_ -> x
+            serverParams <- setup_ECDHE grp
             signed       <- digitallySignECDHParams ctx serverParams sigAlg
             case sigAlg of
                 SignatureRSA -> return $ SKX_ECDHE_RSA serverParams signed

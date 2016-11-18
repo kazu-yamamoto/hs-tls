@@ -125,6 +125,9 @@ module Network.TLS
     , ValidationCache(..)
     , ValidationCacheResult(..)
     , exceptionValidationCache
+
+    -- * Elliptic group
+    , Group(..)
     ) where
 
 import Network.TLS.Backend (Backend(..), HasBackend(..))
@@ -136,6 +139,7 @@ import Network.TLS.Struct ( TLSError(..), TLSException(..)
                           , Bytes
                           , Handshake)
 import Network.TLS.Crypto (KxError(..), DHParams)
+import Network.TLS.Crypto.Types (Group(..))
 import Network.TLS.Cipher
 import Network.TLS.Hooks
 import Network.TLS.Measurement
