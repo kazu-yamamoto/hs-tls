@@ -33,7 +33,6 @@ import Network.TLS.Cipher
 import Network.TLS.Measurement
 import Network.TLS.Compression
 import Network.TLS.Crypto
-import Network.TLS.Crypto.Types
 import Network.TLS.Credentials
 import Network.TLS.X509
 import Network.TLS.RNG (Seed)

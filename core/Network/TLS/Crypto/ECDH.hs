@@ -15,11 +15,8 @@ module Network.TLS.Crypto.ECDH
 import Control.Arrow
 import Crypto.ECC
 import Crypto.PubKey.ECIES
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
 import Network.TLS.Imports
 import Network.TLS.RNG
-import Network.TLS.Util.Serialization
 import Network.TLS.Crypto.Types
 
 data ECDHPrivate = ECDHPri_P256 (Scalar Curve_P256R1)

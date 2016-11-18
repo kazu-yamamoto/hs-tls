@@ -63,11 +63,10 @@ import qualified Data.ByteString.Char8 as BC
 
 import Network.TLS.Types (Version(..))
 import Network.TLS.Crypto.Types
-import Network.TLS.Struct (ExtensionID, EnumSafe8(..), EnumSafe16(..), HashAndSignatureAlgorithm)
+import Network.TLS.Struct (ExtensionID, EnumSafe8(..), HashAndSignatureAlgorithm)
 import Network.TLS.Wire
 import Network.TLS.Imports
 import Network.TLS.Packet (putSignatureHashAlgorithm, getSignatureHashAlgorithm, putVersion', getVersion')
-import Network.TLS.Types
 
 type HostName = String
 

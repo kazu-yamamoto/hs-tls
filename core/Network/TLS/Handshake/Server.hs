@@ -22,7 +22,6 @@ import Network.TLS.Compression
 import Network.TLS.Credentials
 import Network.TLS.Crypto
 import Network.TLS.Crypto.Types
-import Network.TLS.Crypto.ECDH
 import Network.TLS.Extension
 import Network.TLS.Util (catchException, fromJust)
 import Network.TLS.IO
@@ -47,7 +46,6 @@ import Network.TLS.X509
 
 import qualified Data.ByteArray as BA
 
-import Network.TLS.Packet
 import Network.TLS.Handshake.State2
 import Network.TLS.Sending2
 import Network.TLS.Receiving2

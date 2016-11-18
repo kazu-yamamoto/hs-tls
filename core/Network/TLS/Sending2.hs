@@ -17,7 +17,6 @@ import Control.Concurrent.MVar
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 
-import Network.TLS.Types (Role(..))
 import Network.TLS.Struct
 import Network.TLS.Struct2
 import Network.TLS.Record (RecordM)
@@ -26,7 +25,6 @@ import Network.TLS.Record.Engage2
 import Network.TLS.Packet
 import Network.TLS.Packet2
 import Network.TLS.Context.Internal
-import Network.TLS.State
 import Network.TLS.Handshake.State
 import Network.TLS.Util
 import Network.TLS.Wire

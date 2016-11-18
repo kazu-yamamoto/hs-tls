@@ -77,7 +77,6 @@ import Network.TLS.Crypto
 import Network.TLS.Crypto.Types
 import Network.TLS.MAC
 import Network.TLS.Cipher (CipherKeyExchangeType(..))
-import Network.TLS.Util.Serialization (os2ip,i2ospOf_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
