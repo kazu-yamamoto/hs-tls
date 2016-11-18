@@ -208,7 +208,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
           Nothing -> throwCore $ Error_Protocol ("signature algorithm not implemented", True, HandshakeFailure) -- fixme
           Just c  -> return c
         let usedHash = cipherHash usedCipher
-        doHandshake2 sparams cred ctx chosenVersion usedCipher usedHash keyShare sigAlgo
+        doHandshake2 sparams cred ctx chosenVersion usedCipher usedHash keyShare sigAlgo exts
   where
         commonCipherIDs extra = intersect ciphers (map cipherID $ (ctxCiphers ctx extra))
         commonCiphers   extra = filter (flip elem (commonCipherIDs extra) . cipherID) (ctxCiphers ctx extra)
@@ -242,40 +242,6 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
             recvChangeCipherAndFinish ctx
     handshakeTerminate ctx
   where
-        clientRequestedNPN = isJust $ extensionLookup extensionID_NextProtocolNegotiation exts
-        clientALPNSuggest = isJust $ extensionLookup extensionID_ApplicationLayerProtocolNegotiation exts
-
-        applicationProtocol = do
-            protos <- alpn
-            if null protos then npn else return protos
-
-        alpn | clientALPNSuggest = do
-            suggest <- usingState_ ctx $ getClientALPNSuggest
-            case (onALPNClientSuggest $ serverHooks sparams, suggest) of
-                (Just io, Just protos) -> do
-                    proto <- liftIO $ io protos
-                    usingState_ ctx $ do
-                        setExtensionALPN True
-                        setNegotiatedProtocol proto
-                    return $ [ ExtensionRaw extensionID_ApplicationLayerProtocolNegotiation
-                                            (extensionEncode $ ApplicationLayerProtocolNegotiation [proto]) ]
-                (_, _)                  -> return []
-             | otherwise = return []
-        npn = do
-            nextProtocols <-
-                if clientRequestedNPN
-                    then liftIO $ onSuggestNextProtocols $ serverHooks sparams
-                    else return Nothing
-            case nextProtocols of
-                Just protos -> do
-                    usingState_ ctx $ do
-                        setExtensionNPN True
-                        setServerNextProtocolSuggest protos
-                    return [ ExtensionRaw extensionID_NextProtocolNegotiation
-                             (extensionEncode $ NextProtocolNegotiation protos) ]
-                Nothing -> return []
-
-
         ---
         -- When the client sends a certificate, check whether
         -- it is acceptable for the application.
@@ -298,7 +264,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
                                     return $ extensionEncode (SecureRenegotiation cvf $ Just svf)
                             return [ ExtensionRaw 0xff01 vf ]
                     else return []
-            protoExt <- applicationProtocol
+            protoExt <- applicationProtocol ctx exts sparams
             let extensions = secRengExt ++ protoExt
             usingState_ ctx (setVersion chosenVersion)
             usingHState ctx $ setServerHelloParameters chosenVersion srand usedCipher usedCompression
@@ -497,8 +463,8 @@ recvClientData sparams ctx = runRecvState ctx (RecvStateHandshake processClientC
 
 doHandshake2 :: ServerParams -> Credential -> Context -> Version
              -> Cipher -> Hash -> KeyShareEntry -> SignatureScheme
-             -> IO ()
-doHandshake2 _sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo = do
+             -> [ExtensionRaw] -> IO ()
+doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts = do
     handshakeSendServerData
   where
     handshakeSendServerData = do
@@ -509,7 +475,7 @@ doHandshake2 _sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash
         setHandshakeKey share
         switchTxEncryption ctx
         switchRxEncryption ctx
-        eext <- writeHandshakePacket2 ctx $ EncryptedExtensions2 []
+        eext <- makeExtensions >>= writeHandshakePacket2 ctx
         cert <- writeHandshakePacket2 ctx $ Certificate2 "" certChain
         vrfy <- makeCertVerify >>= writeHandshakePacket2 ctx
         fish <- makeFinished >>= writeHandshakePacket2 ctx
@@ -540,8 +506,8 @@ doHandshake2 _sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash
         usingState_ ctx (setVersion chosenVersion)
         usingHState ctx $ setServerHelloParameters2 srand usedCipher
         let serverKeyShare = extensionEncode $ KeyShareServerHello keyShare
-            ext = ExtensionRaw extensionID_KeyShare serverKeyShare
-        return $ ServerHello2 chosenVersion srand (cipherID usedCipher) [ext]
+            extensions = [ExtensionRaw extensionID_KeyShare serverKeyShare]
+        return $ ServerHello2 chosenVersion srand (cipherID usedCipher) extensions
 
     setHandshakeKey share = do
         let earlySecret = makeEarlySecret usedCipher
@@ -557,6 +523,8 @@ doHandshake2 _sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash
                                            (B.pack $ replicate (hashDigestSize usedHash) 0)
                                            "client application traffic secret"
                                            "server application traffic secret"
+
+    makeExtensions = EncryptedExtensions2 <$> applicationProtocol ctx exts sparams
     makeCertVerify = do
         hashValue <- getHandshakeContextHash
         let toBeSinged = runPut $ do
@@ -608,3 +576,37 @@ findHighestVersionFrom13 clientVersions serverVersions = case svs `intersect` cv
   where
     svs = sortOn Down serverVersions
     cvs = sortOn Down clientVersions
+
+applicationProtocol :: Context -> [ExtensionRaw] -> ServerParams -> IO [ExtensionRaw]
+applicationProtocol ctx exts sparams = do
+    protos <- alpn
+    if null protos then npn else return protos
+  where
+    clientRequestedNPN = isJust $ extensionLookup extensionID_NextProtocolNegotiation exts
+    clientALPNSuggest = isJust $ extensionLookup extensionID_ApplicationLayerProtocolNegotiation exts
+
+    alpn | clientALPNSuggest = do
+        suggest <- usingState_ ctx $ getClientALPNSuggest
+        case (onALPNClientSuggest $ serverHooks sparams, suggest) of
+            (Just io, Just protos) -> do
+                proto <- liftIO $ io protos
+                usingState_ ctx $ do
+                    setExtensionALPN True
+                    setNegotiatedProtocol proto
+                return $ [ ExtensionRaw extensionID_ApplicationLayerProtocolNegotiation
+                                        (extensionEncode $ ApplicationLayerProtocolNegotiation [proto]) ]
+            (_, _)                  -> return []
+         | otherwise = return []
+    npn = do
+        nextProtocols <-
+            if clientRequestedNPN
+                then liftIO $ onSuggestNextProtocols $ serverHooks sparams
+                else return Nothing
+        case nextProtocols of
+            Just protos -> do
+                usingState_ ctx $ do
+                    setExtensionNPN True
+                    setServerNextProtocolSuggest protos
+                return [ ExtensionRaw extensionID_NextProtocolNegotiation
+                         (extensionEncode $ NextProtocolNegotiation protos) ]
+            Nothing -> return []
