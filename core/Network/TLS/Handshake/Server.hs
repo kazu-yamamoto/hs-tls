@@ -526,6 +526,17 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
                                            "server application traffic secret"
 
     makeExtensions = EncryptedExtensions2 <$> applicationProtocol ctx exts sparams
+    sign toBeSinged = case sigAlgo of
+      SigScheme_RSApssSHA256 -> signRSApss C.SHA256 toBeSinged
+      SigScheme_RSApssSHA384 -> signRSApss C.SHA384 toBeSinged
+      SigScheme_RSApssSHA512 -> signRSApss C.SHA512 toBeSinged
+      _ -> error "sign" -- fixme
+
+    signRSApss h toBeSinged = do
+      let PrivKeyRSA rsaPriv = privKey
+      Right signed <- C.sign Nothing (C.defaultPSSParams h) rsaPriv toBeSinged
+      return signed
+
     makeCertVerify = do
         hashValue <- getHandshakeContextHash
         let toBeSinged = runPut $ do
@@ -533,10 +544,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
                 putBytes "TLS 1.3, server CertificateVerify"
                 putWord8 0
                 putBytes hashValue
-            PrivKeyRSA rsaPriv = privKey
-        -- fixme
-        Right signed <- C.sign Nothing (C.defaultPSSParams C.SHA256) rsaPriv toBeSinged
-        return $ CertVerify2 sigAlgo signed
+        CertVerify2 sigAlgo <$> sign toBeSinged
 
     makeFinished = Finished2 <$> makeVerifyData True
 
