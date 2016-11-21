@@ -52,6 +52,8 @@ module Network.TLS.State
     , getSession
     , isSessionResuming
     , isClientContext
+    , getHRRCount
+    , incrementHRRCount
     -- * random
     , genRandom
     , withRNG
@@ -92,6 +94,7 @@ data TLSState = TLSState
     , stRandomGen           :: StateRNG
     , stVersion             :: Maybe Version
     , stClientContext       :: Role
+    , stHRRCount            :: Int
     }
 
 newtype TLSSt a = TLSSt { runTLSSt :: ErrT TLSError (State TLSState) a }
@@ -128,6 +131,7 @@ newTLSState rng clientContext = TLSState
     , stRandomGen           = rng
     , stVersion             = Nothing
     , stClientContext       = clientContext
+    , stHRRCount            = 0
     }
 
 updateVerifiedData :: Role -> Bytes -> TLSSt ()
@@ -258,6 +262,12 @@ getVerifiedData client = gets (if client == ClientRole then stClientVerifiedData
 
 isClientContext :: TLSSt Role
 isClientContext = gets stClientContext
+
+getHRRCount :: TLSSt Int
+getHRRCount = gets stHRRCount
+
+incrementHRRCount :: TLSSt ()
+incrementHRRCount = modify (\st -> st { stHRRCount = stHRRCount st + 1 })
 
 genRandom :: Int -> TLSSt Bytes
 genRandom n = do

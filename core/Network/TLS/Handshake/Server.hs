@@ -32,7 +32,7 @@ import Network.TLS.Handshake.Process
 import Network.TLS.Handshake.Key
 import Network.TLS.Measurement
 import Data.Maybe (isJust, listToMaybe, mapMaybe)
-import Data.List (intersect, sortOn, find)
+import Data.List (intersect, sortOn, find, (\\))
 import qualified Data.ByteString as B
 import Data.ByteString.Char8 ()
 import Data.Ord (Down(..))
@@ -194,21 +194,22 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
       else do
         -- TLS 1.3 or later
         -- Deciding key exchange from key shares
-        let keyShares = case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_KeyShare exts) of
-              Just (Just (KeyShareClientHello kses)) -> kses
-              _                                      -> []
-        Just keyShare <- case keyShares of -- fixme
-          [] -> throwCore $ Error_Protocol ("key exchange not implemented", True, HandshakeFailure) -- fixme
-          ks -> return $ findKeyShare ks $ supportedGroups $ ctxSupported ctx
-        -- Deciding signature algorithm
-        let sigAlgos = case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_SignatureAlgorithms exts) of
-              Just (Just (SignatureSchemes hss)) -> hss
-              _                                  -> []
-        (cred, sigAlgo) <- case credentialsFindForTLS13 sigAlgos creds of
-          Nothing -> throwCore $ Error_Protocol ("signature algorithm not implemented", True, HandshakeFailure) -- fixme
-          Just c  -> return c
-        let usedHash = cipherHash usedCipher
-        doHandshake2 sparams cred ctx chosenVersion usedCipher usedHash keyShare sigAlgo exts
+        keyShares <- case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_KeyShare exts) of
+              Just (Just (KeyShareClientHello kses)) -> return kses
+              _                                      -> throwCore $ Error_Protocol ("key exchange not implemented", True, HandshakeFailure)
+        let serverGroups = supportedGroups $ ctxSupported ctx
+        case findKeyShare keyShares (supportedGroups $ ctxSupported ctx) of
+          Nothing -> helloRetryRequest sparams ctx chosenVersion keyShares serverGroups
+          Just keyShare -> do
+            -- Deciding signature algorithm
+            let sigAlgos = case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_SignatureAlgorithms exts) of
+                  Just (Just (SignatureSchemes hss)) -> hss
+                  _                                  -> []
+            (cred, sigAlgo) <- case credentialsFindForTLS13 sigAlgos creds of
+              Nothing -> throwCore $ Error_Protocol ("signature algorithm not implemented", True, HandshakeFailure) -- fixme
+              Just c  -> return c
+            let usedHash = cipherHash usedCipher
+            doHandshake2 sparams cred ctx chosenVersion usedCipher usedHash keyShare sigAlgo exts
   where
         commonCipherIDs extra = intersect ciphers (map cipherID $ (ctxCiphers ctx extra))
         commonCiphers   extra = filter (flip elem (commonCipherIDs extra) . cipherID) (ctxCiphers ctx extra)
@@ -562,6 +563,27 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         case hstHandshakeDigest hst of
           Right hashCtx -> return $ hashFinal hashCtx
           Left _        -> error "un-initialized handshake digest"
+
+
+helloRetryRequest :: MonadIO m => ServerParams -> Context -> Version -> [KeyShareEntry] -> [Group] -> m ()
+helloRetryRequest sparams ctx chosenVersion keyShares serverGroups = liftIO $ do
+    ecount <- usingState ctx getHRRCount
+    case ecount of
+      Left _ -> err
+      Right count
+        | count >= 3 -> err -- fixme: hard-corded
+        | otherwise -> do
+            usingState_ ctx incrementHRRCount
+            case possibleGroups of
+              [] -> err
+              g:_ -> do
+                  let ext = ExtensionRaw extensionID_KeyShare $ extensionEncode $ KeyShareHRR g
+                  sendPacket2 ctx $ Handshake2 [HelloRetryRequest2 chosenVersion [ext]]
+                  handshakeServer sparams ctx
+  where
+    clientGroups = map (\(KeyShareEntry g _) -> g) keyShares
+    possibleGroups = serverGroups \\ clientGroups
+    err = throwCore $ Error_Protocol ("key exchange not implemented", True, HandshakeFailure)
 
 findHighestVersionFrom :: Version -> [Version] -> Maybe Version
 findHighestVersionFrom clientVersion allowedVersions =
