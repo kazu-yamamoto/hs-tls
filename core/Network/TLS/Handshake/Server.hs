@@ -124,7 +124,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
         throwCore $ Error_Protocol ("fallback is not allowed", True, InappropriateFallback)
 
     -- choosing TLS version
-    let clientVersions = case extensionDecode False `fmap` (extensionLookup extensionID_SupportedVersions exts) of
+    let clientVersions = case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_SupportedVersions exts) of
             Just (Just (SupportedVersions vers)) -> vers
             _                                    -> []
         serverVersions = supportedVersions $ ctxSupported ctx
@@ -142,7 +142,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
         Error_Protocol ("no compression in common with the client", True, HandshakeFailure)
 
     -- SNI (Server Name Indication)
-    let serverName = case extensionDecode False `fmap` (extensionLookup extensionID_ServerName exts) of
+    let serverName = case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_ServerName exts) of
             Just (Just (ServerName ns)) -> listToMaybe (mapMaybe toHostName ns)
                 where toHostName (ServerNameHostName hostName) = Just hostName
                       toHostName (ServerNameOther _)           = Nothing
@@ -150,7 +150,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
     maybe (return ()) (usingState_ ctx . setClientSNI) serverName
 
     -- ALPN (Application Layer Protocol Negotiation)
-    case extensionDecode False `fmap` (extensionLookup extensionID_ApplicationLayerProtocolNegotiation exts) of
+    case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_ApplicationLayerProtocolNegotiation exts) of
         Just (Just (ApplicationLayerProtocolNegotiation protos)) -> usingState_ ctx $ setClientALPNSuggest protos
         _ -> return ()
 
@@ -179,13 +179,13 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
                 (Session (Just clientSessionId)) -> liftIO $ sessionResume (sharedSessionManager $ ctxShared ctx) clientSessionId
                 (Session Nothing)                -> return Nothing
 
-        case extensionDecode False `fmap` (extensionLookup extensionID_Groups exts) of
+        case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_Groups exts) of
             Just (Just (SupportedGroups es)) -> usingState_ ctx $ setClientGroupSuggest es
             _ -> return ()
 
         -- Currently, we don't send back EcPointFormats. In this case,
         -- the client chooses EcPointFormat_Uncompressed.
-        case extensionDecode False `fmap` (extensionLookup extensionID_EcPointFormats exts) of
+        case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_EcPointFormats exts) of
             Just (Just (EcPointFormatsSupported fs)) -> usingState_ ctx $ setClientEcPointFormatSuggest fs
             _ -> return ()
 
@@ -194,14 +194,14 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
       else do
         -- TLS 1.3 or later
         -- Deciding key exchange from key shares
-        let keyShares = case extensionDecode False `fmap` (extensionLookup extensionID_KeyShare exts) of
+        let keyShares = case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_KeyShare exts) of
               Just (Just (KeyShareClientHello kses)) -> kses
               _                                      -> []
         Just keyShare <- case keyShares of -- fixme
           [] -> throwCore $ Error_Protocol ("key exchange not implemented", True, HandshakeFailure) -- fixme
           ks -> return $ findKeyShare ks $ supportedGroups $ ctxSupported ctx
         -- Deciding signature algorithm
-        let sigAlgos = case extensionDecode False `fmap` (extensionLookup extensionID_SignatureAlgorithms exts) of
+        let sigAlgos = case extensionDecode MsgTClinetHello `fmap` (extensionLookup extensionID_SignatureAlgorithms exts) of
               Just (Just (SignatureSchemes hss)) -> hss
               _                                  -> []
         (cred, sigAlgo) <- case credentialsFindForTLS13 sigAlgos creds of

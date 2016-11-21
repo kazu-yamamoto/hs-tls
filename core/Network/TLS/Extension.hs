@@ -51,6 +51,7 @@ module Network.TLS.Extension
     , SignatureScheme(..)
     , SignatureSchemes(..)
     , encodeSignatureScheme
+    , MessageType(..)
     ) where
 
 import Control.Monad
@@ -190,12 +191,15 @@ supportedExtensions = [ extensionID_ServerName
                       , extensionID_TicketEarlyDataInfo
                       ]
 
+data MessageType = MsgTClinetHello
+                 | MsgTServerHello
+                 | MsgTHelloRetryRequest
+                 deriving (Eq,Show)
+
 -- | Extension class to transform bytes to and from a high level Extension type.
 class Extension a where
     extensionID     :: a -> ExtensionID
-    -- True = ServerHello, False = ClienetHello
-    -- FIXME: Hello Retry Request for KeyShare
-    extensionDecode :: Bool -> ByteString -> Maybe a
+    extensionDecode :: MessageType -> ByteString -> Maybe a
     extensionEncode :: a -> ByteString
 
 -- | Server Name extension including the name type and the associated name.
@@ -249,12 +253,13 @@ instance Extension SecureRenegotiation where
     extensionID _ = extensionID_SecureRenegotiation
     extensionEncode (SecureRenegotiation cvd svd) =
         runPut $ putOpaque8 (cvd `B.append` fromMaybe B.empty svd)
-    extensionDecode isServerHello = runGetMaybe $ do
+    extensionDecode msgtype = runGetMaybe $ do
         opaque <- getOpaque8
-        if isServerHello
-           then let (cvd, svd) = B.splitAt (B.length opaque `div` 2) opaque
-                 in return $ SecureRenegotiation cvd (Just svd)
-           else return $ SecureRenegotiation opaque Nothing
+        case msgtype of
+          MsgTServerHello -> let (cvd, svd) = B.splitAt (B.length opaque `div` 2) opaque
+                             in return $ SecureRenegotiation cvd (Just svd)
+          MsgTClinetHello -> return $ SecureRenegotiation opaque Nothing
+          _               -> error "decoding SecureRenegotiation for HRR"
 
 -- | Next Protocol Negotiation
 data NextProtocolNegotiation = NextProtocolNegotiation [ByteString]
@@ -473,12 +478,17 @@ instance Extension KeyShare where
         mapM_ putKeyShareEntry kses
     extensionEncode (KeyShareServerHello kse) = runPut $ putKeyShareEntry kse
     extensionEncode (KeyShareHRR grp) = runPut $ putWord16 $ fromGroup grp
-    extensionDecode True  = runGetMaybe $ do
+    extensionDecode MsgTServerHello  = runGetMaybe $ do
         (_, ment) <- getKeyShareEntry
         case ment of
-            Nothing  -> fail "decoding KeyShare"
+            Nothing  -> fail "decoding KeyShare for ServerHello"
             Just ent -> return $ KeyShareServerHello ent
-    extensionDecode False = runGetMaybe $ do
+    extensionDecode MsgTClinetHello = runGetMaybe $ do
         len <- fromIntegral <$> getWord16
         grps <- getList len getKeyShareEntry
         return $ KeyShareClientHello $ catMaybes grps
+    extensionDecode MsgTHelloRetryRequest = runGetMaybe $ do
+        mgrp <- toGroup <$> getWord16
+        case mgrp of
+          Nothing  -> fail "decoding KeyShare for HRR"
+          Just grp -> return $ KeyShareHRR grp

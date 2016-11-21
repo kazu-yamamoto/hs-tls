@@ -24,6 +24,9 @@ encodeHandshake2 hdsk = pkt
     !pkt = B.concat [header, content]
 
 encodeHandshake2' :: Handshake2 -> ByteString
+encodeHandshake2' (HelloRetryRequest2 ver exts) = runPut $ do
+    putVersion' ver
+    putExtensions exts
 encodeHandshake2' (ServerHello2 ver random cipherId exts) = runPut $ do
     putVersion' ver
     putServerRandom32 random
