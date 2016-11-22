@@ -52,6 +52,8 @@ module Network.TLS.Extension
     , SignatureSchemes(..)
     , encodeSignatureScheme
     , MessageType(..)
+    , PskKexMode(..)
+    , PskKeyExchangeModes(..)
     ) where
 
 import Control.Monad
@@ -492,3 +494,25 @@ instance Extension KeyShare where
         case mgrp of
           Nothing  -> fail "decoding KeyShare for HRR"
           Just grp -> return $ KeyShareHRR grp
+
+data PskKexMode = PSK_KE | PSK_DHE_KE deriving (Eq, Show)
+
+fromPskKexMode :: PskKexMode -> Word8
+fromPskKexMode PSK_KE     = 0
+fromPskKexMode PSK_DHE_KE = 1
+
+toPskKexMode :: Word8 -> Maybe PskKexMode
+toPskKexMode 0 = Just PSK_KE
+toPskKexMode 1 = Just PSK_DHE_KE
+toPskKexMode _ = Nothing
+
+data PskKeyExchangeModes = PskKeyExchangeModes [PskKexMode] deriving (Eq, Show)
+
+instance Extension PskKeyExchangeModes where
+    extensionID _ = extensionID_PskKeyExchangeModes
+    extensionEncode (PskKeyExchangeModes pkms) = runPut $ do
+        let bytes = B.pack $ map fromPskKexMode pkms
+        putOpaque8 bytes
+    extensionDecode _ = runGetMaybe $ do
+        len <- getWord8
+        PskKeyExchangeModes . catMaybes <$> getList (fromIntegral len) ((\x -> (1, toPskKexMode x)) <$> getWord8)
