@@ -54,6 +54,8 @@ module Network.TLS.Extension
     , MessageType(..)
     , PskKexMode(..)
     , PskKeyExchangeModes(..)
+    , PskIdentity(..)
+    , PreSharedKey(..)
     ) where
 
 import Control.Monad
@@ -516,3 +518,43 @@ instance Extension PskKeyExchangeModes where
         putWords8 $ map fromPskKexMode pkms
     extensionDecode _ = runGetMaybe $
         PskKeyExchangeModes . catMaybes . map toPskKexMode <$> getWords8
+
+
+data PskIdentity = PskIdentity Bytes Word32 deriving (Eq, Show)
+
+data PreSharedKey =
+    PreSharedKeyClientHello [PskIdentity] [Bytes]
+  | PreSharedKeyServerHello Word16
+   deriving (Eq, Show)
+
+instance Extension PreSharedKey where
+    extensionID _ = extensionID_PreSharedKey
+    extensionEncode (PreSharedKeyClientHello ids bds) = runPut $ do
+        putOpaque16 $ runPut (mapM_ putIdentity ids)
+        putOpaque16 $ runPut (mapM_ putBinder bds)
+      where
+        putIdentity (PskIdentity bs w) = do
+            putOpaque16 bs
+            putWord32 w
+        putBinder = putOpaque8
+    extensionEncode (PreSharedKeyServerHello w16) = runPut $ putWord16 w16
+    extensionDecode MsgTServerHello = runGetMaybe $
+        PreSharedKeyServerHello <$> getWord16
+    extensionDecode MsgTClinetHello = runGetMaybe $ do
+        len1 <- fromIntegral <$> getWord16
+        identities <- getList len1 getIdentity
+        len2 <- fromIntegral <$> getWord16
+        binders <- getList len2 getBinder
+        return $ PreSharedKeyClientHello identities binders
+      where
+        getIdentity = do
+            identity <- getOpaque16
+            age <- getWord32
+            let len = 2 + B.length identity + 4
+            return (len, PskIdentity identity age)
+        getBinder = do
+            l <- fromIntegral <$> getWord8
+            binder <- getBytes l
+            let len = l + 1
+            return (len, binder)
+    extensionDecode _ = error "decoding PreShareKey"
