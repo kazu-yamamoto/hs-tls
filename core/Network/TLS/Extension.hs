@@ -428,24 +428,26 @@ data SignatureSchemes = SignatureSchemes [SignatureScheme]
 
 instance Extension SignatureSchemes where
     extensionID _ = extensionID_SignatureAlgorithms
-    extensionEncode (SignatureSchemes algs) =
-        runPut $ putWord16 (fromIntegral (length algs * 2)) >> mapM_ encodeSignatureScheme algs
-    extensionDecode _ =
-        runGetMaybe $ do
-            len <- getWord16
-            SignatureSchemes . catMaybes <$> getList (fromIntegral len) ((\mss -> (2,mss)) . toSignatureScheme <$> getWord16)
+    extensionEncode (SignatureSchemes algs) = runPut $
+        putWords16 $ map fromSignatureScheme algs
+    extensionDecode _ = runGetMaybe $
+        SignatureSchemes . catMaybes . map toSignatureScheme <$> getWords16
 
 data SupportedVersions = SupportedVersions [Version]
     deriving (Show,Eq)
 
 instance Extension SupportedVersions where
     extensionID _ = extensionID_SupportedVersions
-    extensionEncode (SupportedVersions vers) =
-        runPut $ putWord8 (fromIntegral (length vers * 2)) >> mapM_ putVersion' vers
-    extensionDecode _ =
-        runGetMaybe $ do
-            len <- getWord8
-            SupportedVersions . catMaybes <$> getList (fromIntegral len) ((\ver -> (2, ver)) <$> getVersion')
+    extensionEncode (SupportedVersions vers) = runPut $ do
+        putWord8 (fromIntegral (length vers * 2))
+        mapM_ putVersion' vers
+    extensionDecode _ = runGetMaybe $ do
+        len <- fromIntegral <$> getWord8
+        SupportedVersions . catMaybes <$> getList len getVer
+      where
+        getVer = do
+            ver <- getVersion'
+            return (2,ver)
 
 data KeyShareEntry = KeyShareEntry Group ByteString
     deriving (Show,Eq)
@@ -510,9 +512,7 @@ data PskKeyExchangeModes = PskKeyExchangeModes [PskKexMode] deriving (Eq, Show)
 
 instance Extension PskKeyExchangeModes where
     extensionID _ = extensionID_PskKeyExchangeModes
-    extensionEncode (PskKeyExchangeModes pkms) = runPut $ do
-        let bytes = B.pack $ map fromPskKexMode pkms
-        putOpaque8 bytes
-    extensionDecode _ = runGetMaybe $ do
-        len <- getWord8
-        PskKeyExchangeModes . catMaybes <$> getList (fromIntegral len) ((\x -> (1, toPskKexMode x)) <$> getWord8)
+    extensionEncode (PskKeyExchangeModes pkms) = runPut $
+        putWords8 $ map fromPskKexMode pkms
+    extensionDecode _ = runGetMaybe $
+        PskKeyExchangeModes . catMaybes . map toPskKexMode <$> getWords8
