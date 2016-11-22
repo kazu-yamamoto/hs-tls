@@ -19,7 +19,7 @@ data CertificateEntry2 = CertificateEntry2 [ExtensionRaw]
 data Handshake2 =
       ClientHello2 !Version !ClientRandom ![CipherID] [ExtensionRaw]
     | ServerHello2 !Version !ServerRandom !CipherID [ExtensionRaw]
-    | NewSessionRequest2 -- fixme
+    | NewSessionTicket2 Word {-Bytes-} Bytes [ExtensionRaw] -- fixme
     | HelloRetryRequest2 !Version [ExtensionRaw]
     | EncryptedExtensions2 [ExtensionRaw]
     | CertRequest2 -- fixme
@@ -32,7 +32,7 @@ data Handshake2 =
 data HandshakeType2 =
       HandshakeType_ClientHello2
     | HandshakeType_ServerHello2
-    | HandshakeType_NewSessionRequest2
+    | HandshakeType_NewSessionTicket2
     | HandshakeType_HelloRetryRequest2
     | HandshakeType_EncryptedExtensions2
     | HandshakeType_CertRequest2
@@ -45,7 +45,7 @@ data HandshakeType2 =
 typeOfHandshake2 :: Handshake2 -> HandshakeType2
 typeOfHandshake2 (ClientHello2 {})         = HandshakeType_ClientHello2
 typeOfHandshake2 (ServerHello2 {})         = HandshakeType_ServerHello2
-typeOfHandshake2 (NewSessionRequest2 {})   = HandshakeType_NewSessionRequest2
+typeOfHandshake2 (NewSessionTicket2 {})    = HandshakeType_NewSessionTicket2
 typeOfHandshake2 (HelloRetryRequest2 {})   = HandshakeType_HelloRetryRequest2
 typeOfHandshake2 (EncryptedExtensions2 {}) = HandshakeType_EncryptedExtensions2
 typeOfHandshake2 (CertRequest2 {})         = HandshakeType_CertRequest2
@@ -57,7 +57,7 @@ typeOfHandshake2 (KeyUpdate2 {})           = HandshakeType_KeyUpdate2
 instance TypeValuable HandshakeType2 where
   valOfType HandshakeType_ClientHello2         = 1
   valOfType HandshakeType_ServerHello2         = 2
-  valOfType HandshakeType_NewSessionRequest2   = 4
+  valOfType HandshakeType_NewSessionTicket2    = 4
   valOfType HandshakeType_HelloRetryRequest2   = 6
   valOfType HandshakeType_EncryptedExtensions2 = 8
   valOfType HandshakeType_CertRequest2         = 13
@@ -68,7 +68,7 @@ instance TypeValuable HandshakeType2 where
 
   valToType 1  = Just HandshakeType_ClientHello2
   valToType 2  = Just HandshakeType_ServerHello2
-  valToType 4  = Just HandshakeType_NewSessionRequest2
+  valToType 4  = Just HandshakeType_NewSessionTicket2
   valToType 6  = Just HandshakeType_HelloRetryRequest2
   valToType 8  = Just HandshakeType_EncryptedExtensions2
   valToType 13 = Just HandshakeType_CertRequest2

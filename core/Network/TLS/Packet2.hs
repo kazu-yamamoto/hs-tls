@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Network.TLS.Packet2 where
 
@@ -23,6 +24,10 @@ encodeHandshake2 hdsk = pkt
     !header = encodeHandshakeHeader2 tp len
     !pkt = B.concat [header, content]
 
+-- TLS 1.3 does not use "select (extensions_present)".
+putExtensions :: [ExtensionRaw] -> Put
+putExtensions es = putOpaque16 (runPut $ mapM_ putExtension es)
+
 encodeHandshake2' :: Handshake2 -> ByteString
 encodeHandshake2' (HelloRetryRequest2 ver exts) = runPut $ do
     putVersion' ver
@@ -32,7 +37,6 @@ encodeHandshake2' (ServerHello2 ver random cipherId exts) = runPut $ do
     putServerRandom32 random
     putWord16 cipherId
     putExtensions exts
-encodeHandshake2' (EncryptedExtensions2 []) = runPut $ putWord16 0
 encodeHandshake2' (EncryptedExtensions2 exts) = runPut $ putExtensions exts
 encodeHandshake2' (Certificate2 reqctx cc) = runPut $ do
     putOpaque8 reqctx
@@ -46,6 +50,11 @@ encodeHandshake2' (CertVerify2 sigAlgo signature) = runPut $ do
     encodeSignatureScheme sigAlgo
     putOpaque16 signature
 encodeHandshake2' (Finished2 dat) = runPut $ putBytes dat
+encodeHandshake2' (NewSessionTicket2 life ticket exts) = runPut $ do
+    putWord32 $ fromIntegral life
+    putWord32 1234
+    putOpaque16 ticket
+    putExtensions exts
 encodeHandshake2' _ = error "encodeHandshake2'"
 
 encodeHandshakeHeader2 :: HandshakeType2 -> Int -> ByteString

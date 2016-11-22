@@ -38,6 +38,7 @@ module Network.TLS.Wire
     , putWord16
     , putWords16
     , putWord24
+    , putWord32
     , putBytes
     , putOpaque8
     , putOpaque16
