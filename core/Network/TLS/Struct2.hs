@@ -8,7 +8,7 @@ import Network.TLS.Types
 import Network.TLS.Crypto.ECDH
 
 data Packet2 =
-      Handshake2 [Handshake2]
+      Handshake2 [Handshake2] (Maybe Bytes)
     | Alert2 [(AlertLevel, AlertDescription)]
     | AppData2 ByteString
     deriving (Show,Eq)
@@ -98,7 +98,7 @@ instance TypeValuable ContentType where
     valToType _  = Nothing
 
 contentType :: Packet2 -> ContentType
-contentType (Handshake2 _)    = ContentType_Handshake
+contentType (Handshake2 _ _)  = ContentType_Handshake
 contentType (Alert2 _)        = ContentType_Alert
 contentType (AppData2 _)      = ContentType_AppData
 

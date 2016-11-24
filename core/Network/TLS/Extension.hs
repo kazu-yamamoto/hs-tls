@@ -524,7 +524,7 @@ data PskIdentity = PskIdentity Bytes Word32 deriving (Eq, Show)
 
 data PreSharedKey =
     PreSharedKeyClientHello [PskIdentity] [Bytes]
-  | PreSharedKeyServerHello Word16
+  | PreSharedKeyServerHello Int
    deriving (Eq, Show)
 
 instance Extension PreSharedKey where
@@ -537,9 +537,10 @@ instance Extension PreSharedKey where
             putOpaque16 bs
             putWord32 w
         putBinder = putOpaque8
-    extensionEncode (PreSharedKeyServerHello w16) = runPut $ putWord16 w16
+    extensionEncode (PreSharedKeyServerHello w16) = runPut $
+        putWord16 $ fromIntegral w16
     extensionDecode MsgTServerHello = runGetMaybe $
-        PreSharedKeyServerHello <$> getWord16
+        PreSharedKeyServerHello . fromIntegral <$> getWord16
     extensionDecode MsgTClinetHello = runGetMaybe $ do
         len1 <- fromIntegral <$> getWord16
         identities <- getList len1 getIdentity

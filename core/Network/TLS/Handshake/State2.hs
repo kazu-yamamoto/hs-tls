@@ -74,13 +74,12 @@ computeKeyBlock2 hst salt ikm cLabel sLabel cc = (pendingTx, pendingRx, secret')
 
         orOnServer f g = if cc == ClientRole then f else g
 
-makeEarlySecret :: Cipher -> B.ByteString
-makeEarlySecret cipher = fromPRKeytoByteString earlySecret
+makeEarlySecret :: Cipher -> B.ByteString -> B.ByteString
+makeEarlySecret cipher ikm = fromPRKeytoByteString earlySecret
   where
     h = cipherHash cipher
     hsize = hashDigestSize h
     salt = B.replicate hsize 0
-    ikm = salt
     earlySecret = hkdfExtract h salt ikm
 
 setServerHelloParameters2 :: ServerRandom

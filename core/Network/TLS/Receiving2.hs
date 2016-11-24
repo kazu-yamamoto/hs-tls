@@ -38,7 +38,7 @@ processPacket2 ctx (Record2 ContentType_Handshake fragment) = do
         mCont <- gets stHandshakeRecordCont2
         modify (\st -> st { stHandshakeRecordCont2 = Nothing })
         hss   <- parseMany mCont fragment
-        return $ Handshake2 hss
+        return $ Handshake2 hss (Just fragment)
   where parseMany mCont bs =
             case maybe decodeHandshakeRecord2 id mCont $ bs of
                 GotError err                -> throwError err

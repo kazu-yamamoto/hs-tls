@@ -465,15 +465,25 @@ recvClientData sparams ctx = runRecvState ctx (RecvStateHandshake processClientC
 doHandshake2 :: ServerParams -> Credential -> Context -> Version
              -> Cipher -> Hash -> KeyShareEntry -> SignatureScheme
              -> [ExtensionRaw] -> IO ()
-doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts =
-    handshakeSendServerData
+doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts = do
+    shareKey <- initialize
+    let mpsk = findPSK
+    sendServerHello shareKey mpsk
+    recvClientFinishied
+    sendNewSessionTicket
   where
-    handshakeSendServerData = do
+    initialize = do
         serverSession <- newSession ctx
         usingState_ ctx (setSession serverSession False)
-        (share, kex) <- makeShare
-        helo <- makeServerHello kex >>= writeHandshakePacket2 ctx
-        setHandshakeKey share
+        makeShare
+
+    findPSK = case extensionLookup extensionID_PreSharedKey exts >>= extensionDecode MsgTClinetHello of
+                Just (PreSharedKeyClientHello psks _binders) -> Just (head psks, 0 :: Int) -- fixme
+                _ -> Nothing
+
+    sendServerHello (share,kex) Nothing = do
+        helo <- makeServerHello kex [] >>= writeHandshakePacket2 ctx
+        setHandshakeKey share zero
         switchTxEncryption ctx
         switchRxEncryption ctx
         eext <- makeExtensions >>= writeHandshakePacket2 ctx
@@ -481,11 +491,34 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         vrfy <- makeCertVerify >>= writeHandshakePacket2 ctx
         fish <- makeFinished >>= writeHandshakePacket2 ctx
         contextSend ctx $ B.concat [helo, eext, cert, vrfy, fish]
-        recvPacket2 ctx >>= verifyFinished
+    sendServerHello (share,kex) (Just (PskIdentity psk _,n)) = do
+        let spsk = extensionEncode $ PreSharedKeyServerHello $ fromIntegral n
+            extensions = [ExtensionRaw extensionID_PreSharedKey spsk]
+        helo <- makeServerHello kex extensions >>= writeHandshakePacket2 ctx
+        setHandshakeKey share psk
+        switchTxEncryption ctx
+        switchRxEncryption ctx
+        eext <- makeExtensions >>= writeHandshakePacket2 ctx
+        fish <- makeFinished >>= writeHandshakePacket2 ctx
+        contextSend ctx $ B.concat [helo, eext, fish]
+
+    recvClientFinishied = do
+        fragment <- recvPacket2 ctx >>= verifyFinished
         setApplicationKey
         switchTxEncryption ctx
         switchRxEncryption ctx
         setEstablished ctx True
+        usingHState ctx $ updateHandshakeDigest fragment
+
+    sendNewSessionTicket = do
+        Just masterSecret <- usingHState ctx $ gets hstMasterSecret
+        hashValue <- getHandshakeContextHash
+        let masterSecret' = fromByteStringToPRKey (cipherHash usedCipher) masterSecret
+            label = "resumption master secret"
+            resumption_secret = deriveSecret masterSecret' label hashValue
+        -- fixme: resumption_secret must be encrypted
+        let nst = NewSessionTicket2 100000 resumption_secret []
+        writeHandshakePacket2 ctx nst >>= contextSend ctx
 
     makeShare = case grp of
         P256   -> setup_ECDHE
@@ -501,27 +534,29 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
             keyShare = KeyShareEntry grp bytes'
         return (BA.convert share, keyShare)
 
-    makeServerHello keyShare = do
+    makeServerHello keyShare extensions = do
         srand <- ServerRandom <$> getStateRNG ctx 32
         usingHState ctx $ setPrivateKey privKey
         usingState_ ctx (setVersion chosenVersion)
         usingHState ctx $ setServerHelloParameters2 srand usedCipher
         let serverKeyShare = extensionEncode $ KeyShareServerHello keyShare
-            extensions = [ExtensionRaw extensionID_KeyShare serverKeyShare]
-        return $ ServerHello2 chosenVersion srand (cipherID usedCipher) extensions
+            extensions' = ExtensionRaw extensionID_KeyShare serverKeyShare
+                        : extensions
+        return $ ServerHello2 chosenVersion srand (cipherID usedCipher) extensions'
 
-    setHandshakeKey share = do
-        let earlySecret = makeEarlySecret usedCipher
+    setHandshakeKey share ikm = do
+        let earlySecret = makeEarlySecret usedCipher ikm
         usingHState ctx $ setMasterSecret2 ServerRole
                                            earlySecret
                                            share
                                            "client handshake traffic secret"
                                            "server handshake traffic secret"
+
     setApplicationKey = do
         Just handshakeSecret <- usingHState ctx $ gets hstMasterSecret
         usingHState ctx $ setMasterSecret2 ServerRole
                                            handshakeSecret
-                                           (B.pack $ replicate (hashDigestSize usedHash) 0)
+                                           zero
                                            "client application traffic secret"
                                            "server application traffic secret"
 
@@ -548,11 +583,12 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
 
     makeFinished = Finished2 <$> makeVerifyData True
 
-    verifyFinished (Right (Handshake2 [Finished2 verifyData])) = do
+    verifyFinished (Right (Handshake2 [Finished2 verifyData] (Just frag))) = do
         verifyData' <- makeVerifyData False
         when (verifyData /= verifyData') $
             throwCore $ Error_Protocol ("finished verification failed", True, HandshakeFailure)
-    verifyFinished _ = error "verifyFinished" -- fixme
+        return frag
+    verifyFinished e = error $ "verifyFinished: " ++ show e
 
     makeVerifyData isServer = do
         -- dirty hack: cstMacSecret is used for traffic key
@@ -572,6 +608,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
           Right hashCtx -> return $ hashFinal hashCtx
           Left _        -> error "un-initialized handshake digest"
 
+    zero = B.replicate (hashDigestSize usedHash) 0
 
 helloRetryRequest :: MonadIO m => ServerParams -> Context -> Version -> [KeyShareEntry] -> [Group] -> m ()
 helloRetryRequest sparams ctx chosenVersion keyShares serverGroups = liftIO $ do
@@ -586,7 +623,7 @@ helloRetryRequest sparams ctx chosenVersion keyShares serverGroups = liftIO $ do
               [] -> err
               g:_ -> do
                   let ext = ExtensionRaw extensionID_KeyShare $ extensionEncode $ KeyShareHRR g
-                  sendPacket2 ctx $ Handshake2 [HelloRetryRequest2 chosenVersion [ext]]
+                  sendPacket2 ctx $ Handshake2 [HelloRetryRequest2 chosenVersion [ext]] Nothing
                   handshakeServer sparams ctx
   where
     clientGroups = map (\(KeyShareEntry g _) -> g) keyShares
