@@ -589,11 +589,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     verifyFinished e = error $ "verifyFinished: " ++ show e
 
     makeVerifyData isServer = do
-        -- dirty hack: cstMacSecret is used for traffic key
-        let getKey
-              | isServer  = fromJust "tx-state" <$> gets hstPendingTxState
-              | otherwise = fromJust "rx-state" <$> gets hstPendingRxState
-        baseKey <- cstMacSecret . stCryptState <$> usingHState ctx getKey
+        baseKey <- getBaseKey <$> usingHState ctx (getPendingState isServer)
         hashValue <- getHandshakeContextHash
         let prk = fromByteStringToPRKey usedHash baseKey
             size = hashDigestSize usedHash

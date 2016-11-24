@@ -52,10 +52,10 @@ computeKeyBlock2 hst salt ikm cLabel sLabel cc = (pendingTx, pendingRx, secret')
         sWriteIV     = hkdfExpandLabel sPRKey "iv"  "" ivSize
         cstClient = CryptState { cstKey        = bulkInit bulk (BulkEncrypt `orOnServer` BulkDecrypt) cWriteKey
                                , cstIV         = cWriteIV
-                               , cstMacSecret  = cSecret } -- fixme: darty hack
+                               , cstMacSecret  = cSecret } -- fixme: dirty hack
         cstServer = CryptState { cstKey        = bulkInit bulk (BulkDecrypt `orOnServer` BulkEncrypt) sWriteKey
                                , cstIV         = sWriteIV
-                               , cstMacSecret  = sSecret } -- fixme: darty hack
+                               , cstMacSecret  = sSecret } -- fixme: dirty hack
         msClient = MacState { msSequence = 0 }
         msServer = MacState { msSequence = 0 }
 
@@ -95,3 +95,12 @@ setServerHelloParameters2 sran cipher = do
   where hashAlg = cipherHash cipher
         updateDigest (Left bytes) = Right $ foldl hashUpdate (hashInit hashAlg) $ reverse bytes
         updateDigest (Right _)    = error "cannot initialize digest with another digest"
+
+-- fixme: dirty hack
+getBaseKey :: CryptState -> Bytes
+getBaseKey = cstMacSecret
+
+getPendingState :: Bool -> HandshakeM CryptState
+getPendingState isServer
+ | isServer  = stCryptState . fromJust "tx-state" <$> gets hstPendingTxState
+ | otherwise = stCryptState . fromJust "rx-state" <$> gets hstPendingRxState
