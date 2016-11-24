@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Module      : Network.TLS.Handshake.Server
 -- License     : BSD-style
@@ -159,9 +159,9 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
 
     let ciphersFilteredVersion = filter (cipherAllowedForVersion chosenVersion) (commonCiphers extraCreds)
         usedCipher = (onCipherChoosing $ serverHooks sparams) chosenVersion ciphersFilteredVersion
-        creds = extraCreds `mappend` (sharedCredentials $ ctxShared ctx)
+        creds = extraCreds `mappend` sharedCredentials (ctxShared ctx)
 
-    when (commonCipherIDs extraCreds == []) $ throwCore $
+    when (null $ commonCipherIDs extraCreds) $ throwCore $
         Error_Protocol ("no cipher in common with the client", True, HandshakeFailure)
 
     -- TLS version dependent
@@ -169,7 +169,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
         -- TLS 1.0, 1.1 and 1.2
         cred <- case cipherKeyExchange usedCipher of
                     CipherKeyExchange_RSA     -> return $ credentialsFindForDecrypting creds
-                    CipherKeyExchange_DH_Anon -> return $ Nothing
+                    CipherKeyExchange_DH_Anon -> return Nothing
                     CipherKeyExchange_DHE_RSA -> return $ credentialsFindForSigning SignatureRSA creds
                     CipherKeyExchange_DHE_DSS -> return $ credentialsFindForSigning SignatureDSS creds
                     CipherKeyExchange_ECDHE_RSA -> return $ credentialsFindForSigning SignatureRSA creds
@@ -211,7 +211,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
             let usedHash = cipherHash usedCipher
             doHandshake2 sparams cred ctx chosenVersion usedCipher usedHash keyShare sigAlgo exts
   where
-        commonCipherIDs extra = intersect ciphers (map cipherID $ (ctxCiphers ctx extra))
+        commonCipherIDs extra = ciphers `intersect` map cipherID (ctxCiphers ctx extra)
         commonCiphers   extra = filter (flip elem (commonCipherIDs extra) . cipherID) (ctxCiphers ctx extra)
         commonCompressions    = compressionIntersectID (supportedCompressions $ ctxSupported ctx) compressions
         usedCompression       = head commonCompressions
@@ -249,7 +249,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
         --
         ---
         makeServerHello session = do
-            srand <- getStateRNG ctx 32 >>= return . ServerRandom
+            srand <- ServerRandom <$> getStateRNG ctx 32
             case mcred of
                 Just (_, privkey) -> usingHState ctx $ setPrivateKey privkey
                 _                 -> return () -- return a sensible error
@@ -322,7 +322,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
 
             usingHState ctx $ setServerDHParams serverParams
             usingHState ctx $ modify $ \hst -> hst { hstDHPrivate = Just priv }
-            return (serverParams)
+            return serverParams
 
         generateSKX_DHE sigAlg = do
             serverParams  <- setup_DHE
@@ -343,8 +343,8 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
             return serverParams
 
         generateSKX_ECDHE sigAlg = do
-            grps <- usingState_ ctx $ getClientGroupSuggest
-            let common = (supportedGroups $ ctxSupported ctx) `intersect` availableEllipticGroups `intersect` fromJust "ClientEllipticCurveSuggest" grps
+            grps <- usingState_ ctx getClientGroupSuggest
+            let common = supportedGroups (ctxSupported ctx) `intersect` availableEllipticGroups `intersect` fromJust "ClientEllipticCurveSuggest" grps
                 grp = case common of
                     []  -> error "No common EllipticCurves"
                     x:_ -> x
@@ -369,7 +369,7 @@ recvClientData :: ServerParams -> Context -> IO ()
 recvClientData sparams ctx = runRecvState ctx (RecvStateHandshake processClientCertificate)
   where processClientCertificate (Certificates certs) = do
             -- run certificate recv hook
-            ctxWithHooks ctx (\hooks -> hookRecvCertificates hooks $ certs)
+            ctxWithHooks ctx (\hooks -> hookRecvCertificates hooks certs)
             -- Call application callback to see whether the
             -- certificate chain is acceptable.
             --
@@ -413,7 +413,7 @@ recvClientData sparams ctx = runRecvState ctx (RecvStateHandshake processClientC
                     -- When verification succeeds, commit the
                     -- client certificate chain to the context.
                     --
-                    Just certs <- usingHState ctx $ getClientCertChain
+                    Just certs <- usingHState ctx getClientCertChain
                     usingState_ ctx $ setClientCertificateChain certs
                     return ()
 
@@ -430,13 +430,13 @@ recvClientData sparams ctx = runRecvState ctx (RecvStateHandshake processClientC
                             -- application callbacks accepts, we
                             -- also commit the client certificate
                             -- chain to the context.
-                            Just certs <- usingHState ctx $ getClientCertChain
+                            Just certs <- usingHState ctx getClientCertChain
                             usingState_ ctx $ setClientCertificateChain certs
                         else throwCore $ Error_Protocol ("verification failed", True, BadCertificate)
             return $ RecvStateNext expectChangeCipher
 
         processCertificateVerify p = do
-            chain <- usingHState ctx $ getClientCertChain
+            chain <- usingHState ctx getClientCertChain
             case chain of
                 Just cc | isNullCertificateChain cc -> return ()
                         | otherwise                 -> throwCore $ Error_Protocol ("cert verify message missing", True, UnexpectedMessage)
@@ -455,7 +455,7 @@ recvClientData sparams ctx = runRecvState ctx (RecvStateHandshake processClientC
         expectFinish p            = unexpected (show p) (Just "Handshake Finished")
 
         checkValidClientCertChain msg = do
-            chain <- usingHState ctx $ getClientCertChain
+            chain <- usingHState ctx getClientCertChain
             let throwerror = Error_Protocol (msg , True, UnexpectedMessage)
             case chain of
                 Nothing -> throwCore throwerror
@@ -465,7 +465,7 @@ recvClientData sparams ctx = runRecvState ctx (RecvStateHandshake processClientC
 doHandshake2 :: ServerParams -> Credential -> Context -> Version
              -> Cipher -> Hash -> KeyShareEntry -> SignatureScheme
              -> [ExtensionRaw] -> IO ()
-doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts = do
+doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts =
     handshakeSendServerData
   where
     handshakeSendServerData = do
@@ -616,14 +616,14 @@ applicationProtocol ctx exts sparams = do
     clientALPNSuggest = isJust $ extensionLookup extensionID_ApplicationLayerProtocolNegotiation exts
 
     alpn | clientALPNSuggest = do
-        suggest <- usingState_ ctx $ getClientALPNSuggest
+        suggest <- usingState_ ctx getClientALPNSuggest
         case (onALPNClientSuggest $ serverHooks sparams, suggest) of
             (Just io, Just protos) -> do
                 proto <- liftIO $ io protos
                 usingState_ ctx $ do
                     setExtensionALPN True
                     setNegotiatedProtocol proto
-                return $ [ ExtensionRaw extensionID_ApplicationLayerProtocolNegotiation
+                return [ ExtensionRaw extensionID_ApplicationLayerProtocolNegotiation
                                         (extensionEncode $ ApplicationLayerProtocolNegotiation [proto]) ]
             (_, _)                  -> return []
          | otherwise = return []
