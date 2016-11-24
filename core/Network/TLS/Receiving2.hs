@@ -51,6 +51,6 @@ processPacket2 ctx (Record2 ContentType_Handshake fragment) = do
                         Right hh -> (hh:) `fmap` parseMany Nothing left
 
 switchRxEncryption :: Context -> IO ()
-switchRxEncryption ctx =
-    usingHState ctx (gets hstPendingRxState) >>= \rx ->
-    liftIO $ modifyMVar_ (ctxRxState ctx) (\_ -> return $ fromJust "rx-state" rx)
+switchRxEncryption ctx = do
+    rx <- fromJust "rx-state" <$> usingHState ctx (gets hstPendingRxState)
+    modifyMVar_ (ctxRxState ctx) (\_ -> return rx)

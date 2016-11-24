@@ -56,4 +56,4 @@ prepareRecord = runTxState
 switchTxEncryption :: Context -> IO ()
 switchTxEncryption ctx = do
     tx <- usingHState ctx (fromJust "tx-state" <$> gets hstPendingTxState)
-    liftIO $ modifyMVar_ (ctxTxState ctx) (\_ -> return tx)
+    modifyMVar_ (ctxTxState ctx) (\_ -> return tx)

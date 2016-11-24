@@ -484,8 +484,6 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     sendServerHello (share,kex) Nothing = do
         helo <- makeServerHello kex [] >>= writeHandshakePacket2 ctx
         setHandshakeKey share zero
-        switchTxEncryption ctx
-        switchRxEncryption ctx
         eext <- makeExtensions >>= writeHandshakePacket2 ctx
         cert <- writeHandshakePacket2 ctx $ Certificate2 "" certChain
         vrfy <- makeCertVerify >>= writeHandshakePacket2 ctx
@@ -496,8 +494,6 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
             extensions = [ExtensionRaw extensionID_PreSharedKey spsk]
         helo <- makeServerHello kex extensions >>= writeHandshakePacket2 ctx
         setHandshakeKey share psk
-        switchTxEncryption ctx
-        switchRxEncryption ctx
         eext <- makeExtensions >>= writeHandshakePacket2 ctx
         fish <- makeFinished >>= writeHandshakePacket2 ctx
         contextSend ctx $ B.concat [helo, eext, fish]
@@ -505,8 +501,6 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     recvClientFinishied = do
         fragment <- recvPacket2 ctx >>= verifyFinished
         setApplicationKey
-        switchTxEncryption ctx
-        switchRxEncryption ctx
         setEstablished ctx True
         usingHState ctx $ updateHandshakeDigest fragment
 
@@ -546,19 +540,23 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
 
     setHandshakeKey share ikm = do
         let earlySecret = makeEarlySecret usedCipher ikm
-        usingHState ctx $ setMasterSecret2 ServerRole
-                                           earlySecret
-                                           share
-                                           "client handshake traffic secret"
-                                           "server handshake traffic secret"
+        setKey earlySecret
+               share
+               "client handshake traffic secret"
+               "server handshake traffic secret"
 
     setApplicationKey = do
         Just handshakeSecret <- usingHState ctx $ gets hstMasterSecret
-        usingHState ctx $ setMasterSecret2 ServerRole
-                                           handshakeSecret
-                                           zero
-                                           "client application traffic secret"
-                                           "server application traffic secret"
+        setKey handshakeSecret
+               zero
+               "client application traffic secret"
+               "server application traffic secret"
+
+    setKey salt ikm cLabel sLabel = do
+        usingHState ctx $
+            setMasterSecret2 ServerRole salt ikm cLabel sLabel
+        switchTxEncryption ctx
+        switchRxEncryption ctx
 
     makeExtensions = EncryptedExtensions2 <$> applicationProtocol ctx exts sparams
     sign toBeSinged = case sigAlgo of
