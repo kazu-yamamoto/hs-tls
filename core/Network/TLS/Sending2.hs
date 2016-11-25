@@ -46,7 +46,10 @@ encodeRecord (Record2 ct bytes) = return ebytes
 
 writePacket2 :: Context -> Packet2 -> IO (Either TLSError ByteString)
 writePacket2 ctx pkt@(Handshake2 hss _) = do
-    forM_ hss (usingHState ctx . updateHandshakeDigest . encodeHandshake2)
+    forM_ hss $ \hs -> usingHState ctx $ do
+        let encoded = encodeHandshake2 hs
+        updateHandshakeDigest encoded
+        addHandshakeMessage encoded
     prepareRecord ctx (makeRecord pkt >>= engageRecord >>= encodeRecord)
 writePacket2 ctx pkt = prepareRecord ctx (makeRecord pkt >>= engageRecord >>= encodeRecord)
 
