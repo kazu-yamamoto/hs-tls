@@ -527,9 +527,8 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     sendNewSessionTicket = do
         Just masterSecret <- usingHState ctx $ gets hstMasterSecret
         hashValue <- getHandshakeContextHash
-        let masterSecret' = fromByteStringToPRKey (cipherHash usedCipher) masterSecret
-            label = "resumption master secret"
-            resumption_secret = deriveSecret masterSecret' label hashValue
+        let label = "resumption master secret"
+            resumption_secret = deriveSecret usedHash masterSecret label hashValue
         -- fixme: resumption_secret must be encrypted
         let tedi = extensionEncode $ TicketEarlyDataInfo 1000 -- fixme
             extensions = [ExtensionRaw extensionID_TicketEarlyDataInfo tedi]
@@ -540,9 +539,8 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         hss <- usingHState ctx $ getHandshakeMessages
         let hss' = truncateHss hss
             transcryptHash = hash usedHash $ B.concat hss' -- fixme: inefficient
-            earlySecret = makeEarlySecret usedCipher psk -- fixme: redundant
-            prk = fromByteStringToPRKey usedHash earlySecret
-            binderKey = deriveSecret prk "resumption psk binder key" (hash usedHash "")
+            earlySecret = makeEarlySecret usedHash psk -- fixme: redundant
+            binderKey = deriveSecret usedHash earlySecret "resumption psk binder key" (hash usedHash "")
             binder' = makeVerifyData binderKey transcryptHash
         when (binder /= binder') $ error "check binder" -- fixme: alert
       where
@@ -577,7 +575,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         return $ ServerHello2 chosenVersion srand (cipherID usedCipher) extensions'
 
     setHandshakeKey share ikm = do
-        let earlySecret = makeEarlySecret usedCipher ikm
+        let earlySecret = makeEarlySecret usedHash ikm
         setKey earlySecret
                share
                "client handshake traffic secret"
@@ -633,9 +631,8 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
 
     makeVerifyData baseKey hashValue = hmac usedHash finishedKey hashValue
       where
-        prk = fromByteStringToPRKey usedHash baseKey
         size = hashDigestSize usedHash
-        finishedKey = hkdfExpandLabel prk "finished" "" size
+        finishedKey = hkdfExpandLabel usedHash baseKey "finished" "" size
 
     getHandshakeContextHash = do
         Just hst <- getHState ctx -- fixme

@@ -17,7 +17,7 @@ import Network.TLS.Cipher
 import Network.TLS.Compression
 import Network.TLS.Types
 import Network.TLS.Handshake.State
-import Network.TLS.KeySchedule (hkdfExtract, deriveSecret, hkdfExpandLabel, fromByteStringToPRKey, fromPRKeytoByteString)
+import Network.TLS.KeySchedule (hkdfExtract, deriveSecret, hkdfExpandLabel)
 import Control.Monad.State
 import qualified Data.ByteString as B
 
@@ -31,7 +31,7 @@ setMasterSecret2 role salt ikm cLable sLabel = modify $ \hst ->
             , hstPendingRxState = Just pendingRx }
 
 computeKeyBlock2 :: HandshakeState -> Bytes -> Bytes -> Bytes -> Bytes -> Role -> (RecordState, RecordState, Bytes)
-computeKeyBlock2 hst salt ikm cLabel sLabel cc = (pendingTx, pendingRx, secret')
+computeKeyBlock2 hst salt ikm cLabel sLabel cc = (pendingTx, pendingRx, secret)
   where cipher       = fromJust "cipher" $ hstPendingCipher hst
         hashValue    = case hstHandshakeDigest hst of
           Right hashCtx -> hashFinal hashCtx
@@ -40,16 +40,13 @@ computeKeyBlock2 hst salt ikm cLabel sLabel cc = (pendingTx, pendingRx, secret')
         keySize      = bulkKeySize bulk
         ivSize       = max 8 (bulkIVSize bulk + bulkExplicitIV bulk)
         secret       = hkdfExtract h salt ikm
-        secret'      = fromPRKeytoByteString secret
         h            = cipherHash cipher
-        cSecret      = deriveSecret secret cLabel hashValue
-        cPRKey       = fromByteStringToPRKey h cSecret
-        sSecret      = deriveSecret secret sLabel hashValue
-        sPRKey       = fromByteStringToPRKey h sSecret
-        cWriteKey    = hkdfExpandLabel cPRKey "key" "" keySize
-        sWriteKey    = hkdfExpandLabel sPRKey "key" "" keySize
-        cWriteIV     = hkdfExpandLabel cPRKey "iv" "" ivSize
-        sWriteIV     = hkdfExpandLabel sPRKey "iv"  "" ivSize
+        cSecret      = deriveSecret h secret cLabel hashValue
+        sSecret      = deriveSecret h secret sLabel hashValue
+        cWriteKey    = hkdfExpandLabel h cSecret "key" "" keySize
+        sWriteKey    = hkdfExpandLabel h sSecret "key" "" keySize
+        cWriteIV     = hkdfExpandLabel h cSecret "iv" "" ivSize
+        sWriteIV     = hkdfExpandLabel h sSecret "iv"  "" ivSize
         cstClient = CryptState { cstKey        = bulkInit bulk (BulkEncrypt `orOnServer` BulkDecrypt) cWriteKey
                                , cstIV         = cWriteIV
                                , cstMacSecret  = cSecret } -- fixme: dirty hack
@@ -74,13 +71,11 @@ computeKeyBlock2 hst salt ikm cLabel sLabel cc = (pendingTx, pendingRx, secret')
 
         orOnServer f g = if cc == ClientRole then f else g
 
-makeEarlySecret :: Cipher -> B.ByteString -> B.ByteString
-makeEarlySecret cipher ikm = fromPRKeytoByteString earlySecret
+makeEarlySecret :: Hash -> B.ByteString -> B.ByteString
+makeEarlySecret h ikm = hkdfExtract h salt ikm
   where
-    h = cipherHash cipher
     hsize = hashDigestSize h
     salt = B.replicate hsize 0
-    earlySecret = hkdfExtract h salt ikm
 
 setServerHelloParameters2 :: ServerRandom
                           -> Cipher

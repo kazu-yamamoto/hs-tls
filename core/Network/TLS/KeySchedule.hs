@@ -1,14 +1,9 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ExistentialQuantification #-}
 
 module Network.TLS.KeySchedule (
     hkdfExtract
   , hkdfExpandLabel
   , deriveSecret
-  , PRKey
-  , fromPRKeytoByteString
-  , fromByteStringToPRKey
   ) where
 
 import Network.TLS.Crypto
@@ -20,66 +15,30 @@ import Network.TLS.Wire
 
 ----------------------------------------------------------------
 
-data PRKey = forall a . H.HashAlgorithm a => PRKey (PRK a)
-
-instance Show PRKey where
-    show (PRKey prk) = show prk
-
-fromPRKeytoByteString :: PRKey -> ByteString
-fromPRKeytoByteString (PRKey prf) = toByteString prf
-
-fromByteStringToPRKey :: Hash -> ByteString -> PRKey
-fromByteStringToPRKey SHA1   bs = PRKey ((fromByteString bs) :: PRK H.SHA1)
-fromByteStringToPRKey SHA256 bs = PRKey ((fromByteString bs) :: PRK H.SHA256)
-fromByteStringToPRKey SHA384 bs = PRKey ((fromByteString bs) :: PRK H.SHA384)
-fromByteStringToPRKey SHA512 bs = PRKey ((fromByteString bs) :: PRK H.SHA512)
-fromByteStringToPRKey _ _       = error "fromByteStringToPRKey"
-
-----------------------------------------------------------------
-
-hkdfExtract :: Hash -> ByteString -> ByteString -> PRKey
-hkdfExtract SHA1   salt ikm = PRKey ((hkdfExtract' salt ikm) :: PRK H.SHA1)
-hkdfExtract SHA256 salt ikm = PRKey ((hkdfExtract' salt ikm) :: PRK H.SHA256)
-hkdfExtract SHA384 salt ikm = PRKey ((hkdfExtract' salt ikm) :: PRK H.SHA384)
-hkdfExtract SHA512 salt ikm = PRKey ((hkdfExtract' salt ikm) :: PRK H.SHA512)
+hkdfExtract :: Hash -> ByteString -> ByteString -> ByteString
+hkdfExtract SHA1   salt ikm = toByteString ((extract salt ikm) :: PRK H.SHA1)
+hkdfExtract SHA256 salt ikm = toByteString ((extract salt ikm) :: PRK H.SHA256)
+hkdfExtract SHA384 salt ikm = toByteString ((extract salt ikm) :: PRK H.SHA384)
+hkdfExtract SHA512 salt ikm = toByteString ((extract salt ikm) :: PRK H.SHA512)
 hkdfExtract _ _ _           = error "hkdfExtract: unsupported hash"
 
-hkdfExtract' :: H.HashAlgorithm a
-             => ByteString -- salt
-             -> ByteString -- input key material
-             -> PRK a
-hkdfExtract' = extract
-
 ----------------------------------------------------------------
 
-deriveSecret :: PRKey -> ByteString -> ByteString -> ByteString
-deriveSecret (PRKey secret) label hashedMsgs =
-    deriveSecret' secret label hashedMsgs
-
-deriveSecret' :: forall a. H.HashAlgorithm a => PRK a -> ByteString -> ByteString -> ByteString
-deriveSecret' secret label hashedMsgs =
-    hkdfExpandLabel' secret label hashedMsgs len
+deriveSecret :: Hash -> ByteString -> ByteString -> ByteString -> ByteString
+deriveSecret h secret label hashedMsgs =
+    hkdfExpandLabel h secret label hashedMsgs len
   where
-    len = H.hashDigestSize (undefined :: a)
+    len = hashDigestSize h
 
 ----------------------------------------------------------------
 
-hkdfExpandLabel :: PRKey
+hkdfExpandLabel :: Hash
+                -> ByteString
                 -> ByteString
                 -> ByteString
                 -> Int
                 -> ByteString
-hkdfExpandLabel (PRKey secret) label hashValue len =
-    hkdfExpandLabel' secret label hashValue len
-
-hkdfExpandLabel' :: H.HashAlgorithm a
-                 => PRK a
-                 -> ByteString
-                 -> ByteString
-                 -> Int
-                 -> ByteString
-hkdfExpandLabel' secret label hashValue len =
-    expand secret hkdfLabel len
+hkdfExpandLabel h secret label hashValue len = expand' h secret hkdfLabel len
   where
     hkdfLabel :: ByteString
     hkdfLabel = runPut $ do
@@ -91,5 +50,12 @@ hkdfExpandLabel' secret label hashValue len =
         putBytes $ tlsLabel
         putWord8 $ fromIntegral hashLen
         putBytes $ hashValue
+
+expand' :: Hash -> ByteString -> ByteString -> Int -> ByteString
+expand' SHA1   secret label len = expand ((fromByteString secret) :: PRK H.SHA1) label len
+expand' SHA256 secret label len = expand ((fromByteString secret) :: PRK H.SHA256) label len
+expand' SHA384 secret label len = expand ((fromByteString secret) :: PRK H.SHA384) label len
+expand' SHA512 secret label len = expand ((fromByteString secret) :: PRK H.SHA512) label len
+expand' _ _ _ _ = error "expand'"
 
 ----------------------------------------------------------------
