@@ -56,6 +56,8 @@ module Network.TLS.Extension
     , PskKeyExchangeModes(..)
     , PskIdentity(..)
     , PreSharedKey(..)
+    , EarlyDataIndication(..)
+    , TicketEarlyDataInfo(..)
     ) where
 
 import Control.Monad
@@ -559,3 +561,17 @@ instance Extension PreSharedKey where
             let len = l + 1
             return (len, binder)
     extensionDecode _ = error "decoding PreShareKey"
+
+data EarlyDataIndication = EarlyDataIndication deriving (Eq, Show)
+
+instance Extension EarlyDataIndication where
+    extensionID _ = extensionID_EarlyData
+    extensionEncode EarlyDataIndication = runPut $ putBytes B.empty
+    extensionDecode _ = return $ Just EarlyDataIndication
+
+data TicketEarlyDataInfo = TicketEarlyDataInfo Word32 deriving (Eq, Show)
+
+instance Extension TicketEarlyDataInfo where
+    extensionID _ = extensionID_TicketEarlyDataInfo
+    extensionEncode (TicketEarlyDataInfo w) = runPut $ putWord32 w
+    extensionDecode _ = runGetMaybe $ TicketEarlyDataInfo <$> getWord32
