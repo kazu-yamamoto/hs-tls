@@ -47,12 +47,9 @@ import Network.TLS.X509
 import qualified Data.ByteArray as BA
 
 import Network.TLS.Handshake.State2
-import Network.TLS.Sending2
-import Network.TLS.Receiving2
 import Network.TLS.Wire
 import Network.TLS.MAC
 import Network.TLS.KeySchedule
-import Network.TLS.Record.State
 
 import qualified Crypto.Hash.Algorithms as C
 import qualified Crypto.PubKey.RSA.PSS as C
@@ -526,7 +523,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
 
     sendNewSessionTicket = do
         Just masterSecret <- usingHState ctx $ gets hstMasterSecret
-        hashValue <- getHandshakeContextHash
+        hashValue <- getHandshakeContextHash ctx
         let label = "resumption master secret"
             resumption_secret = deriveSecret usedHash masterSecret label hashValue
         -- fixme: resumption_secret must be encrypted
@@ -588,11 +585,8 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
                "client application traffic secret"
                "server application traffic secret"
 
-    setKey salt ikm cLabel sLabel = do
-        usingHState ctx $
-            setMasterSecret2 ServerRole salt ikm cLabel sLabel
-        switchTxEncryption ctx
-        switchRxEncryption ctx
+    setKey salt ikm cLabel sLabel =
+        setMasterSecret2 ctx ServerRole usedCipher salt ikm cLabel sLabel
 
     makeExtensions = EncryptedExtensions2 <$> applicationProtocol ctx exts sparams
     sign toBeSinged = case sigAlgo of
@@ -607,7 +601,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
       return signed
 
     makeCertVerify = do
-        hashValue <- getHandshakeContextHash
+        hashValue <- getHandshakeContextHash ctx
         let toBeSinged = runPut $ do
                 putBytes $ B.pack $ replicate 64 32
                 putBytes "TLS 1.3, server CertificateVerify"
@@ -616,13 +610,13 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         CertVerify2 sigAlgo <$> sign toBeSinged
 
     makeFinished = do
-        baseKey <- getBaseKey <$> usingHState ctx (getPendingState True)
-        hashValue <- getHandshakeContextHash
+        baseKey <- getBaseKey <$> getCryptState ctx True
+        hashValue <- getHandshakeContextHash ctx
         return $ Finished2 $ makeVerifyData baseKey hashValue
 
     verifyFinished (Right (Handshake2 [Finished2 verifyData] (Just frag))) = do
-        baseKey <- getBaseKey <$> usingHState ctx (getPendingState False)
-        hashValue <- getHandshakeContextHash
+        baseKey <- getBaseKey <$> getCryptState ctx False
+        hashValue <- getHandshakeContextHash ctx
         let verifyData' = makeVerifyData baseKey hashValue
         when (verifyData /= verifyData') $
             throwCore $ Error_Protocol ("finished verification failed", True, HandshakeFailure)
@@ -633,12 +627,6 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
       where
         size = hashDigestSize usedHash
         finishedKey = hkdfExpandLabel usedHash baseKey "finished" "" size
-
-    getHandshakeContextHash = do
-        Just hst <- getHState ctx -- fixme
-        case hstHandshakeDigest hst of
-          Right hashCtx -> return $ hashFinal hashCtx
-          Left _        -> error "un-initialized handshake digest"
 
     zero = B.replicate (hashDigestSize usedHash) 0
 
