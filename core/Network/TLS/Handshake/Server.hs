@@ -469,7 +469,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     shareKey <- initialize
     let (mpsk, sendNST) = findPSK
     sendServerHello shareKey mpsk
-    recvClientFinishied
+    recvClientFinished
     when sendNST sendNewSessionTicket
   where
     initialize = do
@@ -509,7 +509,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         fish <- makeFinished >>= writeHandshakePacket2 ctx
         contextSend ctx $ B.concat [helo, eext, fish]
 
-    recvClientFinishied = do
+    recvClientFinished = do
         fragment <- recvPacket2 ctx >>= verifyFinished
         setApplicationKey
         setEstablished ctx True
