@@ -467,10 +467,15 @@ doHandshake2 :: ServerParams -> Credential -> Context -> Version
              -> [ExtensionRaw] -> IO ()
 doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts = do
     shareKey <- initialize
-    let (mpsk, sendNST) = findPSK
-    sendServerHello shareKey mpsk
-    recvClientFinished
-    when sendNST sendNewSessionTicket
+    let (mpsk, sendNST, earlyData) = findPSK
+    sendServerHello shareKey mpsk earlyData
+    if earlyData then do
+        -- change keys
+        -- when sendNST sendNewSessionTicket -- fixme: in the case of earlyData
+        return ()
+      else do
+        recvClientFinished
+        when sendNST sendNewSessionTicket
   where
     initialize = do
         serverSession <- newSession ctx
@@ -478,7 +483,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         makeShare
 
     -- We don't support the external PSK.
-    findPSK = (mpsk, sendNST)
+    findPSK = (mpsk, sendNST, earlyData)
       where
         sendNST = null dhModes || (PSK_DHE_KE `elem` dhModes)
         dhModes = case extensionLookup extensionID_PskKeyExchangeModes exts >>= extensionDecode MsgTClinetHello of
@@ -489,8 +494,11 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
               let len = sum (map (\x -> B.length x + 1) bnds) + 2
               in Just (idt,bnd,0::Int,len)
           _                                              -> Nothing
+        earlyData = case extensionLookup extensionID_EarlyData exts of
+          Nothing -> False
+          Just _  -> True
 
-    sendServerHello (share,kex) Nothing = do
+    sendServerHello (share,kex) Nothing _ = do
         helo <- makeServerHello kex [] >>= writeHandshakePacket2 ctx
         setHandshakeKey share zero
         eext <- makeExtensions >>= writeHandshakePacket2 ctx
@@ -498,13 +506,14 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         vrfy <- makeCertVerify >>= writeHandshakePacket2 ctx
         fish <- makeFinished >>= writeHandshakePacket2 ctx
         contextSend ctx $ B.concat [helo, eext, cert, vrfy, fish]
-    sendServerHello (share,kex) (Just (PskIdentity ticket _,binder,n,tlen)) = do
+    sendServerHello (share,kex) (Just pskstuff) _earlyData = do
+        let (PskIdentity ticket _, binder, n, tlen) = pskstuff
         checkBinder binder ticket tlen
         let spsk = extensionEncode $ PreSharedKeyServerHello $ fromIntegral n
             extensions = [ExtensionRaw extensionID_PreSharedKey spsk]
         helo <- makeServerHello kex extensions >>= writeHandshakePacket2 ctx
         -- fixme: ticket should be decrypted here
-        setHandshakeKey share ticket
+        setHandshakeKey share ticket -- fixme: using earlyData
         eext <- makeExtensions >>= writeHandshakePacket2 ctx
         fish <- makeFinished >>= writeHandshakePacket2 ctx
         contextSend ctx $ B.concat [helo, eext, fish]
@@ -522,7 +531,9 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
             label = "resumption master secret"
             resumption_secret = deriveSecret masterSecret' label hashValue
         -- fixme: resumption_secret must be encrypted
-        let nst = NewSessionTicket2 100000 resumption_secret []
+        let tedi = extensionEncode $ TicketEarlyDataInfo 1000 -- fixme
+            extensions = [ExtensionRaw extensionID_TicketEarlyDataInfo tedi]
+        let nst = NewSessionTicket2 100000 resumption_secret extensions
         writeHandshakePacket2 ctx nst >>= contextSend ctx
 
     checkBinder binder psk tlen = do
