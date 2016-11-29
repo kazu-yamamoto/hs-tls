@@ -50,12 +50,6 @@ setXState func encOrDec ctx h cipher secret =
       , stCompression = nullCompression
       }
 
-makeEarlySecret :: Hash -> B.ByteString -> B.ByteString
-makeEarlySecret h ikm = hkdfExtract h salt ikm
-  where
-    hsize = hashDigestSize h
-    salt = B.replicate hsize 0
-
 setServerHelloParameters2 :: ServerRandom
                           -> Cipher
                           -> HandshakeM ()
