@@ -464,11 +464,12 @@ doHandshake2 :: ServerParams -> Credential -> Context -> Version
              -> Cipher -> Hash -> KeyShareEntry -> SignatureScheme
              -> [ExtensionRaw] -> IO ()
 doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts = do
+    newSession ctx >>= \ss -> usingState_ ctx (setSession ss False)
     (psk, binderInfo) <- choosePSK
     let earlySecret = hkdfExtract usedHash zero psk
     (extensions, authenticated) <- checkBinder earlySecret binderInfo
     ----------------------------------------------------------------
-    (ecdhe,keyShare) <- initialize
+    (ecdhe,keyShare) <- makeShare
     let handshakeSecret = hkdfExtract usedHash earlySecret ecdhe
     helo <- makeServerHello keyShare extensions >>= writeHandshakePacket2 ctx
     ----------------------------------------------------------------
@@ -523,11 +524,6 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
                            in [B.take takeLen hs]
         truncateHss (h:hs) = h : truncateHss hs
 
-    initialize = do
-        serverSession <- newSession ctx
-        usingState_ ctx (setSession serverSession False)
-        makeShare
-
     makeShare = case grp of
         P256   -> setup_ECDHE
         P384   -> setup_ECDHE
@@ -562,6 +558,8 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         eext <- makeExtensions >>= writeHandshakePacket2 ctx
         fish <- makeFinished serverHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
         return $ [eext, fish]
+
+    makeExtensions = EncryptedExtensions2 <$> applicationProtocol ctx exts sparams
 
     makeCertVerify = do
         hChCe <- getHandshakeContextHash ctx
@@ -602,7 +600,6 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
           Just (PskKeyExchangeModes ms) -> ms
           Nothing                       -> []
 
-    makeExtensions = EncryptedExtensions2 <$> applicationProtocol ctx exts sparams
     sign toBeSinged = case sigAlgo of
       SigScheme_RSApssSHA256 -> signRSApss C.SHA256 toBeSinged
       SigScheme_RSApssSHA384 -> signRSApss C.SHA384 toBeSinged
