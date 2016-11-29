@@ -463,89 +463,70 @@ doHandshake2 :: ServerParams -> Credential -> Context -> Version
              -> Cipher -> Hash -> KeyShareEntry -> SignatureScheme
              -> [ExtensionRaw] -> IO ()
 doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts = do
-    shareKey <- initialize
-    let (mpsk, sendNST, earlyData) = findPSK
-    sendServerHello shareKey mpsk earlyData
-    if earlyData then do
-        -- change keys
-        -- when sendNST sendNewSessionTicket -- fixme: in the case of earlyData
-        return ()
-      else do
-        recvClientFinished
-        when sendNST sendNewSessionTicket
+    (psk, binderInfo) <- choosePSK
+    let earlySecret = hkdfExtract usedHash zero psk
+    (extensions, authenticated) <- checkBinder earlySecret binderInfo
+    ----------------------------------------------------------------
+    (ecdhe,keyShare) <- initialize
+    let handshakeSecret = hkdfExtract usedHash earlySecret ecdhe
+    helo <- makeServerHello keyShare extensions >>= writeHandshakePacket2 ctx
+    ----------------------------------------------------------------
+    hChSh <- getHandshakeContextHash ctx
+    let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "client handshake traffic secret" hChSh
+        serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "server handshake traffic secret" hChSh
+    setRxtate ctx usedHash usedCipher clientHandshakeTrafficSecret
+    setTxtate ctx usedHash usedCipher serverHandshakeTrafficSecret
+    ----------------------------------------------------------------
+    serverHandshake <- makeServerHandshake authenticated serverHandshakeTrafficSecret
+    contextSend ctx $ B.concat (helo : serverHandshake)
+    ----------------------------------------------------------------
+    let masterSecret = hkdfExtract usedHash handshakeSecret zero
+    hChSf <- getHandshakeContextHash ctx
+    let clientTrafficSecret0 = deriveSecret usedHash masterSecret "client application traffic secret" hChSf
+        serverTrafficSecret0 = deriveSecret usedHash masterSecret "server application traffic secret" hChSf
+    ----------------------------------------------------------------
+    fragment <- recvPacket2 ctx >>= verifyFinished clientHandshakeTrafficSecret
+    setEstablished ctx True
+    setRxtate ctx usedHash usedCipher clientTrafficSecret0
+    setTxtate ctx usedHash usedCipher serverTrafficSecret0
+    usingHState ctx $ do
+        updateHandshakeDigest fragment
+        addHandshakeMessage fragment
+    ----------------------------------------------------------------
+    sendNewSessionTicket masterSecret
   where
-    initialize = do
-        serverSession <- newSession ctx
-        usingState_ ctx (setSession serverSession False)
-        makeShare
+    choosePSK = case extensionLookup extensionID_PreSharedKey exts >>= extensionDecode MsgTClinetHello of
+      Just (PreSharedKeyClientHello (PskIdentity ticket _:_) bnds@(bnd:_)) -> do
+          let len = sum (map (\x -> B.length x + 1) bnds) + 2
+          -- fixme: decrypt ticket to get psk
+          return (ticket, Just (bnd,0::Int,len))
+      _ -> return (zero, Nothing)
 
-    -- We don't support the external PSK.
-    findPSK = (mpsk, sendNST, earlyData)
-      where
-        sendNST = null dhModes || (PSK_DHE_KE `elem` dhModes)
-        dhModes = case extensionLookup extensionID_PskKeyExchangeModes exts >>= extensionDecode MsgTClinetHello of
-          Just (PskKeyExchangeModes ms) -> ms
-          Nothing                       -> []
-        mpsk = case extensionLookup extensionID_PreSharedKey exts >>= extensionDecode MsgTClinetHello of
-          Just (PreSharedKeyClientHello (idt:_) bnds@(bnd:_)) ->
-              let len = sum (map (\x -> B.length x + 1) bnds) + 2
-              in Just (idt,bnd,0::Int,len)
-          _                                              -> Nothing
-        earlyData = case extensionLookup extensionID_EarlyData exts of
-          Nothing -> False
-          Just _  -> True
-
-    sendServerHello (share,kex) Nothing _ = do
-        helo <- makeServerHello kex [] >>= writeHandshakePacket2 ctx
-        setHandshakeKey share zero
-        eext <- makeExtensions >>= writeHandshakePacket2 ctx
-        cert <- writeHandshakePacket2 ctx $ Certificate2 "" certChain
-        vrfy <- makeCertVerify >>= writeHandshakePacket2 ctx
-        fish <- makeFinished >>= writeHandshakePacket2 ctx
-        contextSend ctx $ B.concat [helo, eext, cert, vrfy, fish]
-    sendServerHello (share,kex) (Just pskstuff) _earlyData = do
-        let (PskIdentity ticket _, binder, n, tlen) = pskstuff
-        checkBinder binder ticket tlen
-        let spsk = extensionEncode $ PreSharedKeyServerHello $ fromIntegral n
-            extensions = [ExtensionRaw extensionID_PreSharedKey spsk]
-        helo <- makeServerHello kex extensions >>= writeHandshakePacket2 ctx
-        -- fixme: ticket should be decrypted here
-        setHandshakeKey share ticket -- fixme: using earlyData
-        eext <- makeExtensions >>= writeHandshakePacket2 ctx
-        fish <- makeFinished >>= writeHandshakePacket2 ctx
-        contextSend ctx $ B.concat [helo, eext, fish]
-
-    recvClientFinished = do
-        fragment <- recvPacket2 ctx >>= verifyFinished
-        setApplicationKey
-        setEstablished ctx True
-        usingHState ctx $ updateHandshakeDigest fragment
-
-    sendNewSessionTicket = do
-        Just masterSecret <- usingHState ctx $ gets hstMasterSecret
-        hashValue <- getHandshakeContextHash ctx
-        let label = "resumption master secret"
-            resumption_secret = deriveSecret usedHash masterSecret label hashValue
-        -- fixme: resumption_secret must be encrypted
-        let tedi = extensionEncode $ TicketEarlyDataInfo 1000 -- fixme
-            extensions = [ExtensionRaw extensionID_TicketEarlyDataInfo tedi]
-        let nst = NewSessionTicket2 100000 resumption_secret extensions
-        writeHandshakePacket2 ctx nst >>= contextSend ctx
-
-    checkBinder binder psk tlen = do
+    checkBinder _ Nothing = return ([], False)
+    checkBinder earlySecret (Just (binder,n,tlen)) = do
         hss <- usingHState ctx $ getHandshakeMessages
         let hss' = truncateHss hss
-            transcryptHash = hash usedHash $ B.concat hss' -- fixme: inefficient
-            earlySecret = makeEarlySecret usedHash psk -- fixme: redundant
+            hChTruncated = hash usedHash $ B.concat hss' -- fixme: inefficient
             binderKey = deriveSecret usedHash earlySecret "resumption psk binder key" (hash usedHash "")
-            binder' = makeVerifyData binderKey transcryptHash
-        when (binder /= binder') $ error "check binder" -- fixme: alert
+            binder' = makeVerifyData binderKey hChTruncated
+        if binder == binder' then do
+            let spsk = extensionEncode $ PreSharedKeyServerHello $ fromIntegral n
+                extensions = [ExtensionRaw extensionID_PreSharedKey spsk]
+            -- fixme: check age
+            return (extensions, True)
+          else
+            return ([], False)
       where
         truncateHss []   = [] -- not reached
         truncateHss [hs] = let totalLen = B.length hs
                                takeLen = totalLen - tlen
                            in [B.take takeLen hs]
         truncateHss (h:hs) = h : truncateHss hs
+
+    initialize = do
+        serverSession <- newSession ctx
+        usingState_ ctx (setSession serverSession False)
+        makeShare
 
     makeShare = case grp of
         P256   -> setup_ECDHE
@@ -571,22 +552,55 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
                         : extensions
         return $ ServerHello2 chosenVersion srand (cipherID usedCipher) extensions'
 
-    setHandshakeKey share ikm = do
-        let earlySecret = makeEarlySecret usedHash ikm
-        setKey earlySecret
-               share
-               "client handshake traffic secret"
-               "server handshake traffic secret"
+    makeServerHandshake False serverHandshakeTrafficSecret = do
+        eext <- makeExtensions >>= writeHandshakePacket2 ctx
+        cert <- writeHandshakePacket2 ctx $ Certificate2 "" certChain
+        vrfy <- makeCertVerify >>= writeHandshakePacket2 ctx
+        fish <- makeFinished serverHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
+        return $ [eext, cert, vrfy, fish]
+    makeServerHandshake True serverHandshakeTrafficSecret = do
+        eext <- makeExtensions >>= writeHandshakePacket2 ctx
+        fish <- makeFinished serverHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
+        return $ [eext, fish]
 
-    setApplicationKey = do
-        Just handshakeSecret <- usingHState ctx $ gets hstMasterSecret
-        setKey handshakeSecret
-               zero
-               "client application traffic secret"
-               "server application traffic secret"
+    makeCertVerify = do
+        hChCe <- getHandshakeContextHash ctx
+        let toBeSinged = runPut $ do
+                putBytes $ B.pack $ replicate 64 32
+                putBytes "TLS 1.3, server CertificateVerify"
+                putWord8 0
+                putBytes hChCe
+        CertVerify2 sigAlgo <$> sign toBeSinged
 
-    setKey salt ikm cLabel sLabel =
-        setMasterSecret2 ctx ServerRole usedCipher salt ikm cLabel sLabel
+    makeFinished serverHandshakeTrafficSecret = do
+        hChEe <- getHandshakeContextHash ctx
+        return $ Finished2 $ makeVerifyData serverHandshakeTrafficSecret hChEe
+
+    verifyFinished clientHandshakeTrafficSecret (Right (Handshake2 [Finished2 verifyData] (Just frag))) = do
+        hChSf <- getHandshakeContextHash ctx
+        let verifyData' = makeVerifyData clientHandshakeTrafficSecret hChSf
+        when (verifyData /= verifyData') $
+            throwCore $ Error_Protocol ("finished verification failed", True, HandshakeFailure)
+        return frag
+    verifyFinished _ e = error $ "verifyFinished: " ++ show e
+
+    makeVerifyData baseKey hashValue = hmac usedHash finishedKey hashValue
+      where
+        finishedKey = hkdfExpandLabel usedHash baseKey "finished" "" hashSize
+
+    sendNewSessionTicket masterSecret = when sendNST $ do
+        hChCf <- getHandshakeContextHash ctx
+        let resumption_secret = deriveSecret usedHash masterSecret "resumption master secret" hChCf
+        -- fixme: resumption_secret must be encrypted
+        let tedi = extensionEncode $ TicketEarlyDataInfo 1000 -- fixme
+            extensions = [ExtensionRaw extensionID_TicketEarlyDataInfo tedi]
+        let nst = NewSessionTicket2 100000 resumption_secret extensions
+        writeHandshakePacket2 ctx nst >>= contextSend ctx
+      where
+        sendNST = null dhModes || (PSK_DHE_KE `elem` dhModes)
+        dhModes = case extensionLookup extensionID_PskKeyExchangeModes exts >>= extensionDecode MsgTClinetHello of
+          Just (PskKeyExchangeModes ms) -> ms
+          Nothing                       -> []
 
     makeExtensions = EncryptedExtensions2 <$> applicationProtocol ctx exts sparams
     sign toBeSinged = case sigAlgo of
@@ -600,35 +614,8 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
       Right signed <- C.sign Nothing (C.defaultPSSParams h) rsaPriv toBeSinged
       return signed
 
-    makeCertVerify = do
-        hashValue <- getHandshakeContextHash ctx
-        let toBeSinged = runPut $ do
-                putBytes $ B.pack $ replicate 64 32
-                putBytes "TLS 1.3, server CertificateVerify"
-                putWord8 0
-                putBytes hashValue
-        CertVerify2 sigAlgo <$> sign toBeSinged
-
-    makeFinished = do
-        baseKey <- getBaseKey <$> getCryptState ctx True
-        hashValue <- getHandshakeContextHash ctx
-        return $ Finished2 $ makeVerifyData baseKey hashValue
-
-    verifyFinished (Right (Handshake2 [Finished2 verifyData] (Just frag))) = do
-        baseKey <- getBaseKey <$> getCryptState ctx False
-        hashValue <- getHandshakeContextHash ctx
-        let verifyData' = makeVerifyData baseKey hashValue
-        when (verifyData /= verifyData') $
-            throwCore $ Error_Protocol ("finished verification failed", True, HandshakeFailure)
-        return frag
-    verifyFinished e = error $ "verifyFinished: " ++ show e
-
-    makeVerifyData baseKey hashValue = hmac usedHash finishedKey hashValue
-      where
-        size = hashDigestSize usedHash
-        finishedKey = hkdfExpandLabel usedHash baseKey "finished" "" size
-
-    zero = B.replicate (hashDigestSize usedHash) 0
+    hashSize = hashDigestSize usedHash
+    zero = B.replicate hashSize 0
 
 helloRetryRequest :: MonadIO m => ServerParams -> Context -> Version -> [KeyShareEntry] -> [Group] -> m ()
 helloRetryRequest sparams ctx chosenVersion keyShares serverGroups = liftIO $ do
