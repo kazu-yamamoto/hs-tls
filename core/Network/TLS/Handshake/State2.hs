@@ -15,7 +15,7 @@ import Network.TLS.Crypto
 import Network.TLS.Cipher
 import Network.TLS.Compression
 import Network.TLS.Handshake.State
-import Network.TLS.KeySchedule (hkdfExtract, hkdfExpandLabel)
+import Network.TLS.KeySchedule (hkdfExpandLabel)
 import Network.TLS.Context.Internal
 import Control.Monad.State
 import qualified Data.ByteString as B
@@ -75,3 +75,11 @@ getHandshakeContextHash ctx = do
     case hstHandshakeDigest hst of
       Right hashCtx -> return $ hashFinal hashCtx
       Left _        -> error "un-initialized handshake digest"
+
+setPendingActions :: Context -> [Bytes -> IO ()] -> IO ()
+setPendingActions ctx bss =
+    modifyMVar_ (ctxPendingActions ctx) (\_ -> return bss)
+
+popPendingAction :: Context -> IO (Bytes -> IO ())
+popPendingAction ctx =
+    modifyMVar (ctxPendingActions ctx) (\(bs:bss) -> return (bss,bs)) -- fixme

@@ -37,6 +37,7 @@ import Network.TLS.Parameters
 import Network.TLS.IO
 import Network.TLS.Session
 import Network.TLS.Handshake
+import Network.TLS.Handshake.State2
 import Network.TLS.Util (catchException)
 import qualified Network.TLS.State as S
 import qualified Data.ByteString as B
@@ -169,11 +170,19 @@ recvData2 ctx = liftIO $ do
             terminate err AlertLevel_Fatal InternalError (show err)
 
         -- fixme
+        process (Alert2 [(_,EndOfEarlyData)]) = do
+            alertAction <- popPendingAction ctx
+            alertAction "dummy"
+            recvData2 ctx
         process (Alert2 [(AlertLevel_Warning, CloseNotify)]) = tryBye >> setEOF ctx >> return B.empty
         process (Alert2 [(AlertLevel_Fatal, desc)]) = do
             setEOF ctx
             E.throwIO (Terminated True ("received fatal error: " ++ show desc) (Error_Protocol ("remote side fatal error", True, desc)))
 
+        process (Handshake2 [Finished2 verifyData']) = do -- fixme
+            finishedAction <- popPendingAction ctx
+            finishedAction verifyData'
+            recvData2 ctx
         -- when receiving empty appdata, we just retry to get some data.
         process (AppData2 "") = recvData2 ctx
         process (AppData2 x)  = return x

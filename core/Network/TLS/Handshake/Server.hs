@@ -465,18 +465,24 @@ doHandshake2 :: ServerParams -> Credential -> Context -> Version
              -> [ExtensionRaw] -> IO ()
 doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts = do
     newSession ctx >>= \ss -> usingState_ ctx (setSession ss False)
+    srand <- setServerParameter
     (psk, binderInfo) <- choosePSK
+    hCh <- getHandshakeContextHash ctx
     let earlySecret = hkdfExtract usedHash zero psk
+        clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "client early traffic secret" hCh
     (extensions, authenticated) <- checkBinder earlySecret binderInfo
     ----------------------------------------------------------------
     (ecdhe,keyShare) <- makeShare
     let handshakeSecret = hkdfExtract usedHash earlySecret ecdhe
-    helo <- makeServerHello keyShare extensions >>= writeHandshakePacket2 ctx
+        rtt0 = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTClinetHello of
+          Just EarlyDataIndication -> True
+          Nothing                  -> False
+    helo <- makeServerHello keyShare srand extensions >>= writeHandshakePacket2 ctx
     ----------------------------------------------------------------
     hChSh <- getHandshakeContextHash ctx
     let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "client handshake traffic secret" hChSh
         serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "server handshake traffic secret" hChSh
-    setRxtate ctx usedHash usedCipher clientHandshakeTrafficSecret
+    setRxtate ctx usedHash usedCipher $ if rtt0 then clientEarlyTrafficSecret else clientHandshakeTrafficSecret
     setTxtate ctx usedHash usedCipher serverHandshakeTrafficSecret
     ----------------------------------------------------------------
     serverHandshake <- makeServerHandshake authenticated serverHandshakeTrafficSecret
@@ -489,13 +495,28 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         verifyData = makeVerifyData clientHandshakeTrafficSecret hChSf
         clientFinished = encodeHandshake2 $ Finished2 verifyData
     ----------------------------------------------------------------
-    recvPacket2 ctx >>= verifyFinished verifyData
-    setEstablished ctx True
-    setRxtate ctx usedHash usedCipher clientTrafficSecret0
     setTxtate ctx usedHash usedCipher serverTrafficSecret0
-    ----------------------------------------------------------------
     sendNewSessionTicket masterSecret clientFinished
+    ----------------------------------------------------------------
+    setEstablished ctx True
+    let finishedAction verifyData'
+          | verifyData == verifyData' =
+                setRxtate ctx usedHash usedCipher clientTrafficSecret0
+          | otherwise = error "client finished"
+    if rtt0 then do
+        let alertAction = \_ -> do
+                setRxtate ctx usedHash usedCipher clientHandshakeTrafficSecret
+        setPendingActions ctx [alertAction, finishedAction]
+      else do
+        setPendingActions ctx [finishedAction]
   where
+    setServerParameter = do
+        srand <- ServerRandom <$> getStateRNG ctx 32
+        usingHState ctx $ setPrivateKey privKey
+        usingState_ ctx $ setVersion chosenVersion
+        usingHState ctx $ setServerHelloParameters2 srand usedCipher
+        return srand
+
     choosePSK = case extensionLookup extensionID_PreSharedKey exts >>= extensionDecode MsgTClinetHello of
       Just (PreSharedKeyClientHello (PskIdentity ticket _:_) bnds@(bnd:_)) -> do
           let len = sum (map (\x -> B.length x + 1) bnds) + 2
@@ -538,11 +559,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
             keyShare = KeyShareEntry grp bytes'
         return (BA.convert share, keyShare)
 
-    makeServerHello keyShare extensions = do
-        srand <- ServerRandom <$> getStateRNG ctx 32
-        usingHState ctx $ setPrivateKey privKey
-        usingState_ ctx (setVersion chosenVersion)
-        usingHState ctx $ setServerHelloParameters2 srand usedCipher
+    makeServerHello keyShare srand extensions = do
         let serverKeyShare = extensionEncode $ KeyShareServerHello keyShare
             extensions' = ExtensionRaw extensionID_KeyShare serverKeyShare
                         : extensions
@@ -573,11 +590,6 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     makeFinished serverHandshakeTrafficSecret = do
         hChEe <- getHandshakeContextHash ctx
         return $ Finished2 $ makeVerifyData serverHandshakeTrafficSecret hChEe
-
-    verifyFinished verifyData (Right (Handshake2 [Finished2 verifyData'])) = do
-        when (verifyData /= verifyData') $
-            throwCore $ Error_Protocol ("finished verification failed", True, HandshakeFailure)
-    verifyFinished _ e = error $ "verifyFinished: " ++ show e
 
     makeVerifyData baseKey hashValue = hmac usedHash finishedKey hashValue
       where
