@@ -31,9 +31,9 @@ import Network.TLS.Wire
 
 makeRecord :: Packet2 -> RecordM Record2
 makeRecord pkt = return $ Record2 (contentType pkt) $ writePacketContent pkt
-  where writePacketContent (Handshake2 hss _)  = encodeHandshakes2 hss
-        writePacketContent (Alert2 a)          = encodeAlerts a
-        writePacketContent (AppData2 x)        = x
+  where writePacketContent (Handshake2 hss) = encodeHandshakes2 hss
+        writePacketContent (Alert2 a)       = encodeAlerts a
+        writePacketContent (AppData2 x)     = x
 
 encodeRecord :: Record2 -> RecordM ByteString
 encodeRecord (Record2 ct bytes) = return ebytes
@@ -45,7 +45,7 @@ encodeRecord (Record2 ct bytes) = return ebytes
         putBytes bytes
 
 writePacket2 :: Context -> Packet2 -> IO (Either TLSError ByteString)
-writePacket2 ctx pkt@(Handshake2 hss _) = do
+writePacket2 ctx pkt@(Handshake2 hss) = do
     forM_ hss $ \hs -> usingHState ctx $ do
         let encoded = encodeHandshake2 hs
         updateHandshakeDigest encoded

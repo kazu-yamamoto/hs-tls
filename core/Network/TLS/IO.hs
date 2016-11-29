@@ -142,7 +142,7 @@ sendPacket2 ctx pkt = do
 
 writeHandshakePacket2 :: MonadIO m => Context -> Handshake2 -> m Bytes
 writeHandshakePacket2 ctx hdsk = do
-    let pkt = Handshake2 [hdsk] Nothing
+    let pkt = Handshake2 [hdsk]
     edataToSend <- liftIO $ do
                         withLog ctx $ \logging -> loggingPacketSent logging (show pkt)
                         writePacket2 ctx pkt

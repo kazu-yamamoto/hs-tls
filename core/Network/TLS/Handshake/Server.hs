@@ -17,6 +17,7 @@ import Network.TLS.Context.Internal
 import Network.TLS.Session
 import Network.TLS.Struct
 import Network.TLS.Struct2
+import Network.TLS.Packet2
 import Network.TLS.Cipher
 import Network.TLS.Compression
 import Network.TLS.Credentials
@@ -484,16 +485,15 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     hChSf <- getHandshakeContextHash ctx
     let clientTrafficSecret0 = deriveSecret usedHash masterSecret "client application traffic secret" hChSf
         serverTrafficSecret0 = deriveSecret usedHash masterSecret "server application traffic secret" hChSf
+        verifyData = makeVerifyData clientHandshakeTrafficSecret hChSf
+        clientFinished = encodeHandshake2 $ Finished2 verifyData
     ----------------------------------------------------------------
-    fragment <- recvPacket2 ctx >>= verifyFinished clientHandshakeTrafficSecret
+    recvPacket2 ctx >>= verifyFinished verifyData
     setEstablished ctx True
     setRxtate ctx usedHash usedCipher clientTrafficSecret0
     setTxtate ctx usedHash usedCipher serverTrafficSecret0
-    usingHState ctx $ do
-        updateHandshakeDigest fragment
-        addHandshakeMessage fragment
     ----------------------------------------------------------------
-    sendNewSessionTicket masterSecret
+    sendNewSessionTicket masterSecret clientFinished
   where
     choosePSK = case extensionLookup extensionID_PreSharedKey exts >>= extensionDecode MsgTClinetHello of
       Just (PreSharedKeyClientHello (PskIdentity ticket _:_) bnds@(bnd:_)) -> do
@@ -576,19 +576,19 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         hChEe <- getHandshakeContextHash ctx
         return $ Finished2 $ makeVerifyData serverHandshakeTrafficSecret hChEe
 
-    verifyFinished clientHandshakeTrafficSecret (Right (Handshake2 [Finished2 verifyData] (Just frag))) = do
-        hChSf <- getHandshakeContextHash ctx
-        let verifyData' = makeVerifyData clientHandshakeTrafficSecret hChSf
+    verifyFinished verifyData (Right (Handshake2 [Finished2 verifyData'])) = do
         when (verifyData /= verifyData') $
             throwCore $ Error_Protocol ("finished verification failed", True, HandshakeFailure)
-        return frag
     verifyFinished _ e = error $ "verifyFinished: " ++ show e
 
     makeVerifyData baseKey hashValue = hmac usedHash finishedKey hashValue
       where
         finishedKey = hkdfExpandLabel usedHash baseKey "finished" "" hashSize
 
-    sendNewSessionTicket masterSecret = when sendNST $ do
+    sendNewSessionTicket masterSecret clientFinished = when sendNST $ do
+        usingHState ctx $ do
+            updateHandshakeDigest clientFinished
+            addHandshakeMessage clientFinished
         hChCf <- getHandshakeContextHash ctx
         let resumption_secret = deriveSecret usedHash masterSecret "resumption master secret" hChCf
         -- fixme: resumption_secret must be encrypted
@@ -630,7 +630,7 @@ helloRetryRequest sparams ctx chosenVersion keyShares serverGroups = liftIO $ do
               [] -> err
               g:_ -> do
                   let ext = ExtensionRaw extensionID_KeyShare $ extensionEncode $ KeyShareHRR g
-                  sendPacket2 ctx $ Handshake2 [HelloRetryRequest2 chosenVersion [ext]] Nothing
+                  sendPacket2 ctx $ Handshake2 [HelloRetryRequest2 chosenVersion [ext]]
                   handshakeServer sparams ctx
   where
     clientGroups = map (\(KeyShareEntry g _) -> g) keyShares
