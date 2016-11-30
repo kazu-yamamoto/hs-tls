@@ -474,9 +474,6 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     ----------------------------------------------------------------
     (ecdhe,keyShare) <- makeShare
     let handshakeSecret = hkdfExtract usedHash earlySecret ecdhe
-        rtt0 = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTClinetHello of
-          Just EarlyDataIndication -> True
-          Nothing                  -> False
     helo <- makeServerHello keyShare srand extensions >>= writeHandshakePacket2 ctx
     ----------------------------------------------------------------
     hChSh <- getHandshakeContextHash ctx
@@ -523,6 +520,10 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
           -- fixme: decrypt ticket to get psk
           return (ticket, Just (bnd,0::Int,len))
       _ -> return (zero, Nothing)
+
+    rtt0 = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTClinetHello of
+             Just EarlyDataIndication -> True
+             Nothing                  -> False
 
     checkBinder _ Nothing = return ([], False)
     checkBinder earlySecret (Just (binder,n,tlen)) = do
@@ -576,7 +577,12 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         fish <- makeFinished serverHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
         return $ [eext, fish]
 
-    makeExtensions = EncryptedExtensions2 <$> applicationProtocol ctx exts sparams
+    makeExtensions = do
+        extensions' <- applicationProtocol ctx exts sparams
+        let extensions
+              | rtt0 = ExtensionRaw extensionID_EarlyData (extensionEncode EarlyDataIndication) : extensions'
+              | otherwise = extensions'
+        return $ EncryptedExtensions2 extensions
 
     makeCertVerify = do
         hChCe <- getHandshakeContextHash ctx
