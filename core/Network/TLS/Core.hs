@@ -141,8 +141,10 @@ recvData2 ctx = liftIO $ do
         process (Alert2 [(AlertLevel_Fatal, desc)]) = do
             setEOF ctx
             E.throwIO (Terminated True ("received fatal error: " ++ show desc) (Error_Protocol ("remote side fatal error", True, desc)))
-
-        process (Handshake2 [Finished2 verifyData']) = do -- fixme
+        process (Handshake2 [ClientHello2 _ _ _ _]) = do
+            let reason = "Client hello is not allowed"
+            terminate (Error_Misc reason) AlertLevel_Fatal UnexpectedMessage reason
+        process (Handshake2 [Finished2 verifyData']) = do
             finishedAction <- popPendingAction ctx
             finishedAction verifyData'
             recvData2 ctx
