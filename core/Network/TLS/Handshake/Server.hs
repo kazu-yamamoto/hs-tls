@@ -204,7 +204,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
                   Just (SignatureSchemes hss) -> hss
                   _                           -> []
             (cred, sigAlgo) <- case credentialsFindForTLS13 sigAlgos creds of
-              Nothing -> throwCore $ Error_Protocol ("signature algorithm not implemented", True, HandshakeFailure) -- fixme
+              Nothing -> throwCore $ Error_Protocol ("signature algorithm not implemented", True, HandshakeFailure)
               Just c  -> return c
             let usedHash = cipherHash usedCipher
             doHandshake2 sparams cred ctx chosenVersion usedCipher usedHash keyShare sigAlgo exts
@@ -328,7 +328,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
             case sigAlg of
                 SignatureRSA -> return $ SKX_DHE_RSA serverParams signed
                 SignatureDSS -> return $ SKX_DHE_DSS serverParams signed
-                _            -> error ("generate skx_dhe unsupported signature type: " ++ show sigAlg)
+                _            -> throwCore $ Error_Protocol ("unknown signature scheme", True, HandshakeFailure)
 
         generateSKX_DH_Anon = SKX_DH_Anon <$> setup_DHE
 
@@ -343,14 +343,14 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
         generateSKX_ECDHE sigAlg = do
             grps <- usingState_ ctx getClientGroupSuggest
             let common = supportedGroups (ctxSupported ctx) `intersect` availableEllipticGroups `intersect` fromJust "ClientEllipticCurveSuggest" grps
-                grp = case common of
-                    []  -> error "No common EllipticCurves"
-                    x:_ -> x
+            grp <- case common of
+                []  -> throwCore $ Error_Protocol ("no common elliptic curves", True, HandshakeFailure)
+                x:_ -> return x
             serverParams <- setup_ECDHE grp
             signed       <- digitallySignECDHParams ctx serverParams sigAlg
             case sigAlg of
                 SignatureRSA -> return $ SKX_ECDHE_RSA serverParams signed
-                _            -> error ("generate skx_ecdhe unsupported signature type: " ++ show sigAlg)
+                _            -> throwCore $ Error_Protocol ("unknown signature scheme", True, HandshakeFailure)
 
         -- create a DigitallySigned objects for DHParams or ECDHParams.
 
@@ -499,7 +499,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     let finishedAction verifyData'
           | verifyData == verifyData' =
                 setRxtate ctx usedHash usedCipher clientTrafficSecret0
-          | otherwise = error "client finished"
+          | otherwise = throwCore $ Error_Protocol ("cannot verify finished", True, HandshakeFailure)
     if rtt0 then do
         let alertAction = \_ -> do
                 setRxtate ctx usedHash usedCipher clientHandshakeTrafficSecret
@@ -551,7 +551,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         P384   -> setup_ECDHE
         P521   -> setup_ECDHE
         X25519 -> setup_ECDHE
-        _      -> error $ "makeShare: " ++ show grp
+        _      -> throwCore $ Error_Protocol ("no common group", True, HandshakeFailure)
 
     setup_ECDHE = do
         let yourpub = decodeECDHPublic grp bytes
@@ -622,7 +622,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
       SigScheme_RSApssSHA256 -> signRSApss C.SHA256 toBeSinged
       SigScheme_RSApssSHA384 -> signRSApss C.SHA384 toBeSinged
       SigScheme_RSApssSHA512 -> signRSApss C.SHA512 toBeSinged
-      _ -> error "sign" -- fixme
+      _ -> throwCore $ Error_Protocol ("unsupported signature scheme", True, HandshakeFailure)
 
     signRSApss h toBeSinged = do
       let PrivKeyRSA rsaPriv = privKey
