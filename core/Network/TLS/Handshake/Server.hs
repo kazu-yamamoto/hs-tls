@@ -99,7 +99,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
     unless (supportedClientInitiatedRenegotiation (ctxSupported ctx)) $ do
         established <- ctxEstablished ctx
         eof <- ctxEOF ctx
-        when (established && not eof) $
+        when (established == Established && not eof) $
             throwCore $ Error_Protocol ("renegotiation is not allowed", False, NoRenegotiation)
     -- check if policy allow this new handshake to happens
     handshakeAuthorized <- withMeasure ctx (onNewHandshake $ serverHooks sparams)
@@ -495,10 +495,13 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     setTxtate ctx usedHash usedCipher serverTrafficSecret0
     sendNewSessionTicket masterSecret clientFinished
     ----------------------------------------------------------------
-    setEstablished ctx True
+    let established = if authenticated && rtt0 then EarlyDataAllowed
+                                               else EarlyDataNotAllowed
+    setEstablished ctx established
     let finishedAction verifyData'
-          | verifyData == verifyData' =
-                setRxtate ctx usedHash usedCipher clientTrafficSecret0
+          | verifyData == verifyData' = do
+              setEstablished ctx Established
+              setRxtate ctx usedHash usedCipher clientTrafficSecret0
           | otherwise = throwCore $ Error_Protocol ("cannot verify finished", True, HandshakeFailure)
     if rtt0 then do
         let alertAction = \_ -> do

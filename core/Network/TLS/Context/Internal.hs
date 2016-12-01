@@ -19,6 +19,7 @@ module Network.TLS.Context.Internal
     -- * Context object and accessor
     , Context(..)
     , Hooks(..)
+    , Established(..)
     , ctxEOF
     , ctxHasSSLv2ClientHello
     , ctxDisableSSLv2ClientHello
@@ -96,7 +97,7 @@ data Context = Context
     , ctxState            :: MVar TLSState
     , ctxMeasurement      :: IORef Measurement
     , ctxEOF_             :: IORef Bool    -- ^ has the handle EOFed or not.
-    , ctxEstablished_     :: IORef Bool    -- ^ has the handshake been done and been successful.
+    , ctxEstablished_     :: IORef Established  -- ^ has the handshake been done and been successful.
     , ctxNeedEmptyPacket  :: IORef Bool    -- ^ empty packet workaround for CBC guessability.
     , ctxSSLv2ClientHello :: IORef Bool    -- ^ enable the reception of compatibility SSLv2 client hello.
                                            -- the flag will be set to false regardless of its initial value
@@ -113,6 +114,12 @@ data Context = Context
                                            -- it is usually nested in a write or read lock.
     , ctxPendingActions   :: MVar [Bytes -> IO ()]
     }
+
+data Established = NotEstablished
+                 | EarlyDataAllowed
+                 | EarlyDataNotAllowed
+                 | Established
+                 deriving (Eq, Show)
 
 updateMeasure :: Context -> (Measurement -> Measurement) -> IO ()
 updateMeasure ctx f = do
@@ -161,7 +168,7 @@ ctxDisableSSLv2ClientHello ctx = writeIORef (ctxSSLv2ClientHello ctx) False
 setEOF :: Context -> IO ()
 setEOF ctx = writeIORef (ctxEOF_ ctx) True
 
-ctxEstablished :: Context -> IO Bool
+ctxEstablished :: Context -> IO Established
 ctxEstablished ctx = readIORef $ ctxEstablished_ ctx
 
 ctxWithHooks :: Context -> (Hooks -> IO a) -> IO a
@@ -170,7 +177,7 @@ ctxWithHooks ctx f = readIORef (ctxHooks ctx) >>= f
 contextModifyHooks :: Context -> (Hooks -> Hooks) -> IO ()
 contextModifyHooks ctx f = modifyIORef (ctxHooks ctx) f
 
-setEstablished :: Context -> Bool -> IO ()
+setEstablished :: Context -> Established -> IO ()
 setEstablished ctx v = writeIORef (ctxEstablished_ ctx) v
 
 withLog :: Context -> (Logging -> IO ()) -> IO ()

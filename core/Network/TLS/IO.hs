@@ -39,7 +39,7 @@ import System.IO.Error (mkIOError, eofErrorType)
 checkValid :: Context -> IO ()
 checkValid ctx = do
     established <- ctxEstablished ctx
-    unless established $ liftIO $ throwIO ConnectionNotEstablished
+    when (established == NotEstablished) $ liftIO $ throwIO ConnectionNotEstablished
     eofed <- ctxEOF ctx
     when eofed $ liftIO $ throwIO $ mkIOError eofErrorType "data" Nothing Nothing
 

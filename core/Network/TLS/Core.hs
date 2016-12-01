@@ -150,7 +150,12 @@ recvData2 ctx = liftIO $ do
             recvData2 ctx
         -- when receiving empty appdata, we just retry to get some data.
         process (AppData2 "") = recvData2 ctx
-        process (AppData2 x)  = return x
+        process (AppData2 x) = do
+            established <- ctxEstablished ctx
+            if established == EarlyDataNotAllowed then
+                recvData2 ctx
+              else
+                return x
         process p             = let reason = "unexpected message " ++ show p in
                                 terminate (Error_Misc reason) AlertLevel_Fatal UnexpectedMessage reason
 

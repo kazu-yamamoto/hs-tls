@@ -14,6 +14,7 @@ module Network.TLS.Context
     -- * Context object and accessor
     , Context(..)
     , Hooks(..)
+    , Established(..)
     , ctxEOF
     , ctxHasSSLv2ClientHello
     , ctxDisableSSLv2ClientHello
@@ -169,7 +170,7 @@ contextNew backend params = liftIO $ do
 
     stvar <- newMVar st
     eof   <- newIORef False
-    established <- newIORef False
+    established <- newIORef NotEstablished
     stats <- newIORef newMeasurement
     -- we enable the reception of SSLv2 ClientHello message only in the
     -- server context, where we might be dealing with an old/compat client.

@@ -33,7 +33,7 @@ handshake ctx =
     liftIO $ handleException $ withRWLock ctx (ctxDoHandshake ctx $ ctx)
   where handleException f = catchException f $ \exception -> do
             let tlserror = maybe (Error_Misc $ show exception) id $ fromException exception
-            setEstablished ctx False
+            setEstablished ctx NotEstablished
             tls13 <- tls13orLater ctx
             if tls13 then
                 sendPacket2 ctx $ Alert2 $ errorToAlert tlserror
