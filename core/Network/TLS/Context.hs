@@ -60,6 +60,7 @@ module Network.TLS.Context
     , usingHState
     , getHState
     , getStateRNG
+    , tls13orLater
     ) where
 
 import Network.TLS.Backend

@@ -52,6 +52,7 @@ module Network.TLS.Context.Internal
     , usingHState
     , getHState
     , getStateRNG
+    , tls13orLater
     ) where
 
 import Network.TLS.Backend
@@ -233,3 +234,10 @@ withRWLock ctx f = withReadLock ctx $ withWriteLock ctx f
 
 withStateLock :: Context -> IO a -> IO a
 withStateLock ctx f = withMVar (ctxLockState ctx) (const f)
+
+tls13orLater :: MonadIO m => Context -> m Bool
+tls13orLater ctx = do
+    ev <- liftIO $ usingState ctx getVersion
+    return $ case ev of
+               Left  _ -> False
+               Right v -> v >= TLS13ID16

@@ -47,14 +47,6 @@ import qualified Control.Exception as E
 
 import Control.Monad.State
 
-
-tls13orLater :: MonadIO m => Context -> m Bool
-tls13orLater ctx = do
-    ev <- liftIO $ usingState ctx S.getVersion
-    return $ case ev of
-               Left  _ -> False
-               Right v -> v >= TLS13ID16
-
 -- | notify the context that this side wants to close connection.
 -- this is important that it is called before closing the handle, otherwise
 -- the session might not be resumable (for version < TLS1.2).
@@ -111,22 +103,14 @@ recvData1 ctx = liftIO $ do
                 (\() -> return B.empty)
   where doRecv = do
             pkt <- withReadLock ctx $ recvPacket ctx
-            either onError process pkt
-            
-        safeHandleError_EOF Error_EOF = Just ()
-        safeHandleError_EOF _ = Nothing
-        
-        onError err@(Error_Protocol (reason,fatal,desc)) =
-            terminate err (if fatal then AlertLevel_Fatal else AlertLevel_Warning) desc reason
-        onError err =
-            terminate err AlertLevel_Fatal InternalError (show err)
+            either (onError terminate) process pkt
 
         process (Handshake [ch@(ClientHello {})]) =
             withRWLock ctx ((ctxDoHandshakeWith ctx) ctx ch) >> recvData1 ctx
         process (Handshake [hr@HelloRequest]) =
             withRWLock ctx ((ctxDoHandshakeWith ctx) ctx hr) >> recvData1 ctx
 
-        process (Alert [(AlertLevel_Warning, CloseNotify)]) = tryBye >> setEOF ctx >> return B.empty
+        process (Alert [(AlertLevel_Warning, CloseNotify)]) = tryBye ctx >> setEOF ctx >> return B.empty
         process (Alert [(AlertLevel_Fatal, desc)]) = do
             setEOF ctx
             E.throwIO (Terminated True ("received fatal error: " ++ show desc) (Error_Protocol ("remote side fatal error", True, desc)))
@@ -137,19 +121,7 @@ recvData1 ctx = liftIO $ do
         process p            = let reason = "unexpected message " ++ show p in
                                terminate (Error_Misc reason) AlertLevel_Fatal UnexpectedMessage reason
 
-        terminate :: TLSError -> AlertLevel -> AlertDescription -> String -> IO a
-        terminate err level desc reason = do
-            session <- usingState_ ctx getSession
-            case session of
-                Session Nothing    -> return ()
-                Session (Just sid) -> sessionInvalidate (sharedSessionManager $ ctxShared ctx) sid
-            catchException (sendPacket ctx $ Alert [(level, desc)]) (\_ -> return ())
-            setEOF ctx
-            E.throwIO (Terminated False reason err)
-
-        -- the other side could have close the connection already, so wrap
-        -- this in a try and ignore all exceptions
-        tryBye = catchException (bye ctx) (\_ -> return ())
+        terminate = terminate' ctx (\x -> sendPacket ctx $ Alert x)
 
 recvData2 :: MonadIO m => Context -> m B.ByteString
 recvData2 ctx = liftIO $ do
@@ -159,22 +131,13 @@ recvData2 ctx = liftIO $ do
                 (\() -> return B.empty)
   where doRecv = do
             pkt <- withReadLock ctx $ recvPacket2 ctx
-            either onError process pkt
+            either (onError terminate) process pkt
 
-        safeHandleError_EOF Error_EOF = Just ()
-        safeHandleError_EOF _ = Nothing
-
-        onError err@(Error_Protocol (reason,fatal,desc)) =
-            terminate err (if fatal then AlertLevel_Fatal else AlertLevel_Warning) desc reason
-        onError err =
-            terminate err AlertLevel_Fatal InternalError (show err)
-
-        -- fixme
         process (Alert2 [(_,EndOfEarlyData)]) = do
             alertAction <- popPendingAction ctx
             alertAction "dummy"
             recvData2 ctx
-        process (Alert2 [(AlertLevel_Warning, CloseNotify)]) = tryBye >> setEOF ctx >> return B.empty
+        process (Alert2 [(AlertLevel_Warning, CloseNotify)]) = tryBye ctx >> setEOF ctx >> return B.empty
         process (Alert2 [(AlertLevel_Fatal, desc)]) = do
             setEOF ctx
             E.throwIO (Terminated True ("received fatal error: " ++ show desc) (Error_Protocol ("remote side fatal error", True, desc)))
@@ -189,19 +152,34 @@ recvData2 ctx = liftIO $ do
         process p             = let reason = "unexpected message " ++ show p in
                                 terminate (Error_Misc reason) AlertLevel_Fatal UnexpectedMessage reason
 
-        terminate :: TLSError -> AlertLevel -> AlertDescription -> String -> IO a
-        terminate err level desc reason = do
-            session <- usingState_ ctx getSession
-            case session of
-                Session Nothing    -> return ()
-                Session (Just sid) -> sessionInvalidate (sharedSessionManager $ ctxShared ctx) sid
-            catchException (sendPacket ctx $ Alert [(level, desc)]) (\_ -> return ())
-            setEOF ctx
-            E.throwIO (Terminated False reason err)
+        terminate = terminate' ctx (\x -> sendPacket2 ctx $ Alert2 x)
 
-        -- the other side could have close the connection already, so wrap
-        -- this in a try and ignore all exceptions
-        tryBye = catchException (bye ctx) (\_ -> return ())
+safeHandleError_EOF :: TLSError -> Maybe ()
+safeHandleError_EOF Error_EOF = Just ()
+safeHandleError_EOF _ = Nothing
+
+-- the other side could have close the connection already, so wrap
+-- this in a try and ignore all exceptions
+tryBye :: Context -> IO ()
+tryBye ctx = catchException (bye ctx) (\_ -> return ())
+
+onError :: (TLSError -> AlertLevel -> AlertDescription -> String -> a) -> TLSError -> a
+onError terminate err@(Error_Protocol (reason,fatal,desc)) =
+    terminate err (if fatal then AlertLevel_Fatal else AlertLevel_Warning) desc reason
+onError terminate err =
+    terminate err AlertLevel_Fatal InternalError (show err)
+
+terminate' :: Context -> ([(AlertLevel, AlertDescription)] -> IO ())
+           -> TLSError -> AlertLevel -> AlertDescription -> String -> IO a
+terminate' ctx send err level desc reason = do
+    session <- usingState_ ctx getSession
+    case session of
+        Session Nothing    -> return ()
+        Session (Just sid) -> sessionInvalidate (sharedSessionManager $ ctxShared ctx) sid
+    catchException (send [(level, desc)]) (\_ -> return ())
+    setEOF ctx
+    E.throwIO (Terminated False reason err)
+
 
 {-# DEPRECATED recvData' "use recvData that returns strict bytestring" #-}
 -- | same as recvData but returns a lazy bytestring.
