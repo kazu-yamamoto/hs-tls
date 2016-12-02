@@ -54,6 +54,9 @@ import Network.TLS.KeySchedule
 
 import qualified Crypto.Hash.Algorithms as C
 import qualified Crypto.PubKey.RSA.PSS as C
+import qualified Crypto.PubKey.RSA.PKCS15 as R
+
+import qualified Data.X509 as X
 
 -- Put the server context in handshake mode.
 --
@@ -464,6 +467,8 @@ doHandshake2 :: ServerParams -> Credential -> Context -> Version
              -> Cipher -> Hash -> KeyShareEntry -> SignatureScheme
              -> [ExtensionRaw] -> IO ()
 doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts = do
+    when (isNullCertificateChain certChain) $
+        throwCore $ Error_Protocol ("no certification found", True, HandshakeFailure)
     newSession ctx >>= \ss -> usingState_ ctx (setSession ss False)
     srand <- setServerParameter
     (psk, binderInfo) <- choosePSK
@@ -520,8 +525,9 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     choosePSK = case extensionLookup extensionID_PreSharedKey exts >>= extensionDecode MsgTClinetHello of
       Just (PreSharedKeyClientHello (PskIdentity ticket _:_) bnds@(bnd:_)) -> do
           let len = sum (map (\x -> B.length x + 1) bnds) + 2
-          -- fixme: decrypt ticket to get psk
-          return (ticket, Just (bnd,0::Int,len))
+              PrivKeyRSA rsaPriv = privKey -- fixme
+          Right psk <- R.decryptSafer rsaPriv ticket
+          return (psk, Just (bnd,0::Int,len))
       _ -> return (zero, Nothing)
 
     rtt0 = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTClinetHello of
@@ -610,10 +616,11 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
             addHandshakeMessage clientFinished
         hChCf <- getHandshakeContextHash ctx
         let resumption_secret = deriveSecret usedHash masterSecret "resumption master secret" hChCf
-        -- fixme: resumption_secret must be encrypted
+        let PubKeyRSA rsaPub = X.certPubKey $ X.signedObject $ X.getSigned $ getCertificateChainLeaf certChain -- fixme
+        Right ticket <- R.encrypt rsaPub resumption_secret -- fixme
         let tedi = extensionEncode $ TicketEarlyDataInfo 1000 -- fixme
             extensions = [ExtensionRaw extensionID_TicketEarlyDataInfo tedi]
-        let nst = NewSessionTicket2 100000 resumption_secret extensions
+        let nst = NewSessionTicket2 100000 ticket extensions
         writeHandshakePacket2 ctx nst >>= contextSend ctx
       where
         sendNST = null dhModes || (PSK_DHE_KE `elem` dhModes)
