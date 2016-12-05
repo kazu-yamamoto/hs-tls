@@ -310,7 +310,11 @@ decodeClientKeyXchg cp = -- case  ClientKeyXchg <$> (remaining >>= getBytes)
         -- RFC 4492 Section 5.7 Client Key Exchange
         parseClientECDHPublic = case cParamsECDHGroup cp of
           Nothing  -> error "uninitialized curve group"
-          Just grp -> CKX_ECDH . decodeECDHPublic grp <$> getOpaque8
+          Just grp -> do
+              epub <- decodeECDHPublic grp <$> getOpaque8
+              case epub of
+                Left e    -> error $ show e
+                Right pub -> return $ CKX_ECDH pub
 
 decodeServerKeyXchg_DH :: Get ServerDHParams
 decodeServerKeyXchg_DH = getServerDHParams
@@ -519,8 +523,10 @@ getServerECDHParams = do
             case mgrp of
                 Nothing -> error "unsupported group"
                 Just grp -> do
-                    pub <- decodeECDHPublic grp <$> getOpaque8 -- ECPoint
-                    return $ ServerECDHParams pub
+                    epub <- decodeECDHPublic grp <$> getOpaque8 -- ECPoint
+                    case epub of
+                      Left e    -> error $ show e
+                      Right pub -> return $ ServerECDHParams pub
         _ ->
             error "unknown type for ECDH Params"
 

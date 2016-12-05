@@ -563,7 +563,10 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         _      -> throwCore $ Error_Protocol ("no common group", True, HandshakeFailure)
 
     setup_ECDHE = do
-        let yourpub = decodeECDHPublic grp bytes
+        let eyourpub = decodeECDHPublic grp bytes
+        yourpub <- case eyourpub of
+                     Right pub -> return pub
+                     Left  e   -> throwCore $ Error_Protocol (show e, True, HandshakeFailure)
         (mypub, share) <- ecdhGetPubShared yourpub
         let (_, bytes') = encodeECDHPublic mypub
             keyShare = KeyShareEntry grp bytes'
