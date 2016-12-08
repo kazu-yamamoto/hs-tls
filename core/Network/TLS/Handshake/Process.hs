@@ -95,15 +95,15 @@ processClientKeyXchg ctx (CKX_DH clientDHValue) = do
     rver <- usingState_ ctx getVersion
     role <- usingState_ ctx isClientContext
 
-    serverParams <- fromJust "server dh params" <$> usingHState ctx (gets hstServerDHParams)
-    dhpriv       <- fromJust "dh private" <$> usingHState ctx (gets hstDHPrivate)
+    serverParams <- usingHState ctx getServerDHParams
+    dhpriv       <- usingHState ctx getDHPrivate
     let premaster = dhGetShared (serverDHParamsToParams serverParams) dhpriv clientDHValue
     usingHState ctx $ setMasterSecretFromPre rver role premaster
 
 processClientKeyXchg ctx (CKX_ECDH ecdhpub) = do
     rver <- usingState_ ctx getVersion
     role <- usingState_ ctx isClientContext
-    ecdhpriv <- fromJust "ecdh private" <$> usingHState ctx (gets hstECDHPrivate)
+    ecdhpriv <- usingHState ctx getECDHPrivate
     let premaster = ecdhGetShared ecdhpub ecdhpriv
     usingHState ctx $ setMasterSecretFromPre rver role premaster
 

@@ -322,7 +322,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
             let serverParams = serverDHParamsFrom dhparams pub
 
             usingHState ctx $ setServerDHParams serverParams
-            usingHState ctx $ modify $ \hst -> hst { hstDHPrivate = Just priv }
+            usingHState ctx $ setDHPrivate priv
             return serverParams
 
         generateSKX_DHE sigAlg = do
@@ -339,8 +339,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
             (priv, pub) <- ecdhGenerateKeyPair grp
             let serverParams = ServerECDHParams pub
             usingHState ctx $ setServerECDHParams serverParams
-            usingHState ctx $ modify $ \hst ->
-                hst { hstECDHPrivate = Just priv }
+            usingHState ctx $ setECDHPrivate priv
             return serverParams
 
         generateSKX_ECDHE sigAlg = do
