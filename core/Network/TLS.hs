@@ -126,7 +126,7 @@ module Network.TLS
     , ValidationCacheResult(..)
     , exceptionValidationCache
 
-    -- * Elliptic group
+    -- * Key exchange group
     , Group(..)
     ) where
 
