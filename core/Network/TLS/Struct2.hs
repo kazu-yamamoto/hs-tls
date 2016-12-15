@@ -23,7 +23,7 @@ data Handshake2 =
     | HelloRetryRequest2 !Version [ExtensionRaw]
     | EncryptedExtensions2 [ExtensionRaw]
     | CertRequest2 -- fixme
-    | Certificate2 ByteString CertificateChain -- fixme: extensions
+    | Certificate2 ByteString CertificateChain [[ExtensionRaw]]
     | CertVerify2 SignatureScheme ByteString
     | Finished2 FinishedData
     | KeyUpdate2 -- fixme

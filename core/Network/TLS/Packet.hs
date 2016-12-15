@@ -60,6 +60,7 @@ module Network.TLS.Packet
     , putVersion'
     , putServerRandom32
     , putExtension
+    , getExtensions
     ) where
 
 import Network.TLS.Imports

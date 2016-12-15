@@ -579,7 +579,9 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
 
     makeServerHandshake False serverHandshakeTrafficSecret = do
         eext <- makeExtensions >>= writeHandshakePacket2 ctx
-        cert <- writeHandshakePacket2 ctx $ Certificate2 "" certChain
+        let CertificateChain cs = certChain
+            ess = replicate (length cs) []
+        cert <- writeHandshakePacket2 ctx $ Certificate2 "" certChain ess
         vrfy <- makeCertVerify >>= writeHandshakePacket2 ctx
         fish <- makeFinished serverHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
         return $ [eext, cert, vrfy, fish]
