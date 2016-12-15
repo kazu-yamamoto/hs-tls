@@ -50,13 +50,10 @@ setXState func encOrDec ctx h cipher secret =
       , stCompression = nullCompression
       }
 
-setServerHelloParameters2 :: ServerRandom
-                          -> Cipher
-                          -> HandshakeM ()
-setServerHelloParameters2 sran cipher = do
+setHelloParameters2 :: Cipher -> HandshakeM ()
+setHelloParameters2 cipher = do
     modify $ \hst -> hst
-                { hstServerRandom       = Just sran
-                , hstPendingCipher      = Just cipher
+                { hstPendingCipher      = Just cipher
                 , hstPendingCompression = nullCompression
                 , hstHandshakeDigest    = updateDigest $ hstHandshakeDigest hst
                 }

@@ -518,7 +518,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         srand <- ServerRandom <$> getStateRNG ctx 32
         usingHState ctx $ setPrivateKey privKey
         usingState_ ctx $ setVersion chosenVersion
-        usingHState ctx $ setServerHelloParameters2 srand usedCipher
+        usingHState ctx $ setHelloParameters2 usedCipher
         return srand
 
     choosePSK = case extensionLookup extensionID_PreSharedKey exts >>= extensionDecode MsgTClinetHello of
