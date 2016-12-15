@@ -12,6 +12,7 @@
 
 module Network.TLS.Receiving2 (processPacket2) where
 
+import Control.Monad
 import Control.Monad.State
 import Control.Concurrent.MVar
 
@@ -31,11 +32,18 @@ processPacket2 :: Context -> Record2 -> IO (Either TLSError Packet2)
 processPacket2 _ (Record2 ContentType_AppData fragment) = return $ Right $ AppData2 fragment
 processPacket2 _ (Record2 ContentType_Alert fragment) = return (Alert2 `fmapEither` (decodeAlerts fragment))
 processPacket2 ctx (Record2 ContentType_Handshake fragment) = do
-    usingState ctx $ do
+    ehss <- usingState ctx $ do
         mCont <- gets stHandshakeRecordCont2
         modify (\st -> st { stHandshakeRecordCont2 = Nothing })
-        hss   <- parseMany mCont fragment
-        return $ Handshake2 hss
+        parseMany mCont fragment
+    case ehss of
+      Left e    -> return $ Left e
+      Right hss -> do
+          forM_ hss $ \hs -> usingHState ctx $ do
+              let encoded = encodeHandshake2 hs
+              updateHandshakeDigest encoded
+              addHandshakeMessage encoded
+          return $ Right $ Handshake2 hss
   where parseMany mCont bs =
             case maybe decodeHandshakeRecord2 id mCont $ bs of
                 GotError err                -> throwError err
