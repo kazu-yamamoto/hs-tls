@@ -51,6 +51,7 @@ module Network.TLS.Extension
     , SignatureScheme(..)
     , SignatureSchemes(..)
     , encodeSignatureScheme
+    , decodeSignatureScheme
     , MessageType(..)
     , PskKexMode(..)
     , PskKeyExchangeModes(..)
@@ -426,6 +427,9 @@ fromSignatureScheme SigScheme_Ed448           = 0x0808
 
 encodeSignatureScheme :: SignatureScheme -> Put
 encodeSignatureScheme = putWord16 . fromSignatureScheme
+
+decodeSignatureScheme :: Get (Maybe SignatureScheme)
+decodeSignatureScheme = toSignatureScheme <$> getWord16
 
 data SignatureSchemes = SignatureSchemes [SignatureScheme]
     deriving (Show,Eq)
