@@ -8,7 +8,7 @@
 -- the Sending module contains calls related to marshalling packets according
 -- to the TLS state
 --
-module Network.TLS.Sending2 (writePacket2, switchTxEncryption) where
+module Network.TLS.Sending2 (writePacket2) where
 
 import Control.Applicative
 import Control.Monad.State
@@ -55,8 +55,3 @@ writePacket2 ctx pkt = prepareRecord ctx (makeRecord pkt >>= engageRecord >>= en
 
 prepareRecord :: Context -> RecordM a -> IO (Either TLSError a)
 prepareRecord = runTxState
-
-switchTxEncryption :: Context -> IO ()
-switchTxEncryption ctx = do
-    tx <- usingHState ctx (fromJust "tx-state" <$> gets hstPendingTxState)
-    modifyMVar_ (ctxTxState ctx) (\_ -> return tx)

@@ -10,10 +10,7 @@
 --
 {-# LANGUAGE FlexibleContexts #-}
 
-module Network.TLS.Receiving2
-    ( processPacket2
-    , switchRxEncryption
-    ) where
+module Network.TLS.Receiving2 (processPacket2) where
 
 import Control.Monad.State
 import Control.Concurrent.MVar
@@ -49,8 +46,3 @@ processPacket2 ctx (Record2 ContentType_Handshake fragment) = do
                     case decodeHandshake2 ty content of
                         Left err -> throwError err
                         Right hh -> (hh:) `fmap` parseMany Nothing left
-
-switchRxEncryption :: Context -> IO ()
-switchRxEncryption ctx = do
-    rx <- fromJust "rx-state" <$> usingHState ctx (gets hstPendingRxState)
-    modifyMVar_ (ctxRxState ctx) (\_ -> return rx)
