@@ -11,7 +11,7 @@ module Network.TLS.IO
     ( checkValid
     , sendPacket
     , sendPacket2
-    , writeHandshakePacket2
+    , sendBytes2
     , recvPacket
     , recvPacket2
     ) where
@@ -136,21 +136,12 @@ sendPacket2 ctx pkt = do
                         writePacket2 ctx pkt
     case edataToSend of
         Left err         -> throwCore err
-        Right dataToSend -> liftIO $ do
-            withLog ctx $ \logging -> loggingIOSent logging dataToSend
-            contextSend ctx dataToSend
+        Right dataToSend -> sendBytes2 ctx dataToSend
 
-writeHandshakePacket2 :: MonadIO m => Context -> Handshake2 -> m Bytes
-writeHandshakePacket2 ctx hdsk = do
-    let pkt = Handshake2 [hdsk]
-    edataToSend <- liftIO $ do
-                        withLog ctx $ \logging -> loggingPacketSent logging (show pkt)
-                        writePacket2 ctx pkt
-    case edataToSend of
-        Left err         -> throwCore err
-        Right dataToSend -> liftIO $ do
-            withLog ctx $ \logging -> loggingIOSent logging dataToSend
-            return dataToSend
+sendBytes2 :: MonadIO m => Context -> Bytes -> m ()
+sendBytes2 ctx dataToSend = liftIO $ do
+    withLog ctx $ \logging -> loggingIOSent logging dataToSend
+    contextSend ctx dataToSend
 
 recvRecord2 :: Context
             -> IO (Either TLSError Record2)

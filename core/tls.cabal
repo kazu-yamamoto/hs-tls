@@ -84,6 +84,7 @@ Library
                      Network.TLS.Extension
                      Network.TLS.Handshake
                      Network.TLS.Handshake.Common
+                     Network.TLS.Handshake.Common2
                      Network.TLS.Handshake.Certificate
                      Network.TLS.Handshake.Key
                      Network.TLS.Handshake.Client

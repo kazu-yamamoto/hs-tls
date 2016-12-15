@@ -26,6 +26,7 @@ import Network.TLS.Crypto.Types
 import Network.TLS.Extension
 import Network.TLS.Util (catchException, fromJust)
 import Network.TLS.IO
+import Network.TLS.Sending2
 import Network.TLS.Types
 import Network.TLS.State hiding (getNegotiatedProtocol)
 import Network.TLS.Handshake.State
@@ -49,8 +50,8 @@ import qualified Data.ByteArray as BA
 
 import Network.TLS.Handshake.State2
 import Network.TLS.Wire
-import Network.TLS.MAC
 import Network.TLS.KeySchedule
+import Network.TLS.Handshake.Common2
 
 import qualified Crypto.Hash.Algorithms as C
 import qualified Crypto.PubKey.RSA.PSS as C
@@ -487,13 +488,13 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
     setTxtate ctx usedHash usedCipher serverHandshakeTrafficSecret
     ----------------------------------------------------------------
     serverHandshake <- makeServerHandshake authenticated serverHandshakeTrafficSecret
-    contextSend ctx $ B.concat (helo : serverHandshake)
+    sendBytes2 ctx $ B.concat (helo : serverHandshake)
     ----------------------------------------------------------------
     let masterSecret = hkdfExtract usedHash handshakeSecret zero
     hChSf <- getHandshakeContextHash ctx
     let clientTrafficSecret0 = deriveSecret usedHash masterSecret "client application traffic secret" hChSf
         serverTrafficSecret0 = deriveSecret usedHash masterSecret "server application traffic secret" hChSf
-        verifyData = makeVerifyData clientHandshakeTrafficSecret hChSf
+        verifyData = makeVerifyData usedHash clientHandshakeTrafficSecret hChSf
         clientFinished = encodeHandshake2 $ Finished2 verifyData
     ----------------------------------------------------------------
     setTxtate ctx usedHash usedCipher serverTrafficSecret0
@@ -539,7 +540,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         let hss' = truncateHss hss
             hChTruncated = hash usedHash $ B.concat hss' -- fixme: inefficient
             binderKey = deriveSecret usedHash earlySecret "resumption psk binder key" (hash usedHash "")
-            binder' = makeVerifyData binderKey hChTruncated
+            binder' = makeVerifyData usedHash binderKey hChTruncated
         if binder == binder' then do
             let spsk = extensionEncode $ PreSharedKeyServerHello $ fromIntegral n
                 extensions = [ExtensionRaw extensionID_PreSharedKey spsk]
@@ -583,11 +584,11 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
             ess = replicate (length cs) []
         cert <- writeHandshakePacket2 ctx $ Certificate2 "" certChain ess
         vrfy <- makeCertVerify >>= writeHandshakePacket2 ctx
-        fish <- makeFinished serverHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
+        fish <- makeFinished ctx usedHash serverHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
         return $ [eext, cert, vrfy, fish]
     makeServerHandshake True serverHandshakeTrafficSecret = do
         eext <- makeExtensions >>= writeHandshakePacket2 ctx
-        fish <- makeFinished serverHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
+        fish <- makeFinished ctx usedHash serverHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
         return $ [eext, fish]
 
     makeExtensions = do
@@ -606,14 +607,6 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
                 putBytes hChCe
         CertVerify2 sigAlgo <$> sign toBeSinged
 
-    makeFinished serverHandshakeTrafficSecret = do
-        hChEe <- getHandshakeContextHash ctx
-        return $ Finished2 $ makeVerifyData serverHandshakeTrafficSecret hChEe
-
-    makeVerifyData baseKey hashValue = hmac usedHash finishedKey hashValue
-      where
-        finishedKey = hkdfExpandLabel usedHash baseKey "finished" "" hashSize
-
     sendNewSessionTicket masterSecret clientFinished = when sendNST $ do
         usingHState ctx $ do
             updateHandshakeDigest clientFinished
@@ -625,7 +618,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         let tedi = extensionEncode $ TicketEarlyDataInfo 1000 -- fixme
             extensions = [ExtensionRaw extensionID_TicketEarlyDataInfo tedi]
         let nst = NewSessionTicket2 100000 ticket extensions
-        writeHandshakePacket2 ctx nst >>= contextSend ctx
+        sendPacket2 ctx $ Handshake2 [nst]
       where
         sendNST = null dhModes || (PSK_DHE_KE `elem` dhModes)
         dhModes = case extensionLookup extensionID_PskKeyExchangeModes exts >>= extensionDecode MsgTClinetHello of
@@ -659,7 +652,8 @@ helloRetryRequest sparams ctx chosenVersion keyShares serverGroups = liftIO $ do
               [] -> err
               g:_ -> do
                   let ext = ExtensionRaw extensionID_KeyShare $ extensionEncode $ KeyShareHRR g
-                  sendPacket2 ctx $ Handshake2 [HelloRetryRequest2 chosenVersion [ext]]
+                      hrr = HelloRetryRequest2 chosenVersion [ext]
+                  sendPacket2 ctx $ Handshake2 [hrr]
                   handshakeServer sparams ctx
   where
     clientGroups = map (\(KeyShareEntry g _) -> g) keyShares

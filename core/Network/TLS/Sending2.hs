@@ -8,7 +8,7 @@
 -- the Sending module contains calls related to marshalling packets according
 -- to the TLS state
 --
-module Network.TLS.Sending2 (writePacket2) where
+module Network.TLS.Sending2 (writePacket2, writeHandshakePacket2) where
 
 import Control.Applicative
 import Control.Monad.State
@@ -24,6 +24,7 @@ import Network.TLS.Record.Types2
 import Network.TLS.Record.Engage2
 import Network.TLS.Packet
 import Network.TLS.Packet2
+import Network.TLS.Hooks
 import Network.TLS.Context.Internal
 import Network.TLS.Handshake.State
 import Network.TLS.Util
@@ -52,6 +53,16 @@ writePacket2 ctx pkt@(Handshake2 hss) = do
         addHandshakeMessage encoded
     prepareRecord ctx (makeRecord pkt >>= engageRecord >>= encodeRecord)
 writePacket2 ctx pkt = prepareRecord ctx (makeRecord pkt >>= engageRecord >>= encodeRecord)
+
+writeHandshakePacket2 :: MonadIO m => Context -> Handshake2 -> m Bytes
+writeHandshakePacket2 ctx hdsk = do
+    let pkt = Handshake2 [hdsk]
+    edataToSend <- liftIO $ do
+        withLog ctx $ \logging -> loggingPacketSent logging (show pkt)
+        writePacket2 ctx pkt
+    case edataToSend of
+        Left err         -> throwCore err
+        Right dataToSend -> return dataToSend
 
 prepareRecord :: Context -> RecordM a -> IO (Either TLSError a)
 prepareRecord = runTxState
