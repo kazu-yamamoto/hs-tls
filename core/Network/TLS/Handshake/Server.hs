@@ -617,7 +617,7 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         Right ticket <- R.encrypt rsaPub resumption_secret -- fixme
         let tedi = extensionEncode $ TicketEarlyDataInfo 1000 -- fixme
             extensions = [ExtensionRaw extensionID_TicketEarlyDataInfo tedi]
-        let nst = NewSessionTicket2 100000 ticket extensions
+        let nst = NewSessionTicket2 100000 1234 ticket extensions
         sendPacket2 ctx $ Handshake2 [nst]
       where
         sendNST = null dhModes || (PSK_DHE_KE `elem` dhModes)

@@ -50,9 +50,9 @@ encodeHandshake2' (CertVerify2 sigAlgo signature) = runPut $ do
     encodeSignatureScheme sigAlgo
     putOpaque16 signature
 encodeHandshake2' (Finished2 dat) = runPut $ putBytes dat
-encodeHandshake2' (NewSessionTicket2 life ticket exts) = runPut $ do
-    putWord32 $ fromIntegral life
-    putWord32 1234
+encodeHandshake2' (NewSessionTicket2 life ageadd ticket exts) = runPut $ do
+    putWord32 life
+    putWord32 ageadd
     putOpaque16 ticket
     putExtensions exts
 encodeHandshake2' _ = error "encodeHandshake2'"
@@ -83,7 +83,8 @@ decodeHandshake2 ty = runGetErr ("handshake[" ++ show ty ++ "]") $ case ty of
     HandshakeType_EncryptedExtensions2 -> decodeEncryptedExtensions2
     HandshakeType_Certificate2         -> decodeCertificate2
     HandshakeType_CertVerify2          -> decodeCertVerify2
-    _                                  -> error "decodeHandshake2" -- fixme
+    HandshakeType_NewSessionTicket2    -> decodeNewSessionTicket2
+    _x                                 -> error $ "decodeHandshake2 " ++ show _x
 
 decodeFinished2 :: Get Handshake2
 decodeFinished2 = Finished2 <$> (remaining >>= getBytes)
@@ -113,3 +114,12 @@ decodeCertVerify2 = do
     Just sigAlgo <- decodeSignatureScheme -- fixme
     signature <- getOpaque16
     return $ CertVerify2 sigAlgo signature
+
+decodeNewSessionTicket2 :: Get Handshake2
+decodeNewSessionTicket2 = do
+    life <- getWord32
+    ageadd <- getWord32
+    ticket <- getOpaque16
+    len <- fromIntegral <$> getWord16
+    exts <- getExtensions len
+    return $ NewSessionTicket2 life ageadd ticket exts

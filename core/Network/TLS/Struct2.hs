@@ -1,11 +1,12 @@
 module Network.TLS.Struct2 where
 
 import Data.ByteString (ByteString)
+import Data.Word
 import Data.X509 (CertificateChain)
+import Network.TLS.Crypto.ECDH
 import Network.TLS.Extension (SignatureScheme)
 import Network.TLS.Struct
 import Network.TLS.Types
-import Network.TLS.Crypto.ECDH
 
 data Packet2 =
       Handshake2 [Handshake2]
@@ -19,7 +20,7 @@ data CertificateEntry2 = CertificateEntry2 [ExtensionRaw]
 data Handshake2 =
       ClientHello2 !Version !ClientRandom ![CipherID] [ExtensionRaw]
     | ServerHello2 !Version !ServerRandom !CipherID [ExtensionRaw]
-    | NewSessionTicket2 Word {-Bytes-} Bytes [ExtensionRaw] -- fixme
+    | NewSessionTicket2 Word32 Word32 Bytes [ExtensionRaw] -- fixme
     | HelloRetryRequest2 !Version [ExtensionRaw]
     | EncryptedExtensions2 [ExtensionRaw]
     | CertRequest2 -- fixme
