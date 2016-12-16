@@ -99,6 +99,7 @@ handshakeServer sparams ctx = liftIO $ do
 --
 handshakeServerWith :: ServerParams -> Context -> Handshake -> IO ()
 handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientSession ciphers compressions exts _) = do
+    putStrLn "---- handshake ----"
     -- rejecting client initiated renegotiation to prevent DOS.
     unless (supportedClientInitiatedRenegotiation (ctxSupported ctx)) $ do
         established <- ctxEstablished ctx
@@ -199,6 +200,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
         keyShares <- case extensionLookup extensionID_KeyShare exts >>= extensionDecode MsgTClinetHello of
               Just (KeyShareClientHello kses) -> return kses
               _                               -> throwCore $ Error_Protocol ("key exchange not implemented", True, HandshakeFailure)
+        print $ map (\(KeyShareEntry g _) -> g) keyShares
         let serverGroups = supportedGroups $ ctxSupported ctx
         case findKeyShare keyShares (supportedGroups $ ctxSupported ctx) of
           Nothing -> helloRetryRequest sparams ctx chosenVersion keyShares serverGroups
@@ -467,6 +469,10 @@ doHandshake2 :: ServerParams -> Credential -> Context -> Version
              -> Cipher -> Hash -> KeyShareEntry -> SignatureScheme
              -> [ExtensionRaw] -> IO ()
 doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash (KeyShareEntry grp bytes) sigAlgo exts = do
+    print chosenVersion
+    print usedCipher
+    print grp
+    print sigAlgo
     when (isNullCertificateChain certChain) $
         throwCore $ Error_Protocol ("no certification found", True, HandshakeFailure)
     newSession ctx >>= \ss -> usingState_ ctx (setSession ss False)
@@ -477,6 +483,10 @@ doHandshake2 sparams (certChain, privKey) ctx chosenVersion usedCipher usedHash 
         clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "client early traffic secret" hCh
     (extensions, authenticated) <- checkBinder earlySecret binderInfo
     ----------------------------------------------------------------
+    putStrLn $ if authenticated then
+                 if rtt0 then "<<<0RTT>>>" else "<<<Resumption>>>"
+               else
+                 "<<<Full negotiation>>>"
     (ecdhe,keyShare) <- makeShare
     let handshakeSecret = hkdfExtract usedHash earlySecret ecdhe
     helo <- makeServerHello keyShare srand extensions >>= writeHandshakePacket2 ctx

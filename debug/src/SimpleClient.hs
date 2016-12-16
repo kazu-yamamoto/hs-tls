@@ -29,7 +29,9 @@ import HexDump
 
 ciphers :: [Cipher]
 ciphers =
-    [ cipher_DHE_RSA_AES256_SHA256
+    [ cipher_AES128GCM_SHA256
+    , cipher_AES256GCM_SHA384
+    , cipher_DHE_RSA_AES256_SHA256
     , cipher_DHE_RSA_AES128_SHA256
     , cipher_DHE_RSA_AES256_SHA1
     , cipher_DHE_RSA_AES128_SHA1
@@ -84,7 +86,10 @@ sessionRef ref = SessionManager
 
 getDefaultParams flags host store sStorage certCredsRequest session =
     (defaultParamsClient host BC.empty)
-        { clientSupported = def { supportedVersions = supportedVers, supportedCiphers = myCiphers }
+        { clientSupported = def { supportedVersions = supportedVers
+                                , supportedCiphers = myCiphers
+                                , supportedGroups = [X25519, P256]
+                                }
         , clientWantSessionResume = session
         , clientUseServerNameIndication = not (NoSNI `elem` flags)
         , clientShared = def { sharedSessionManager  = sessionRef sStorage
@@ -131,11 +136,11 @@ getDefaultParams flags host store sStorage certCredsRequest session =
                 | Tls11 `elem` flags = TLS11
                 | Ssl3  `elem` flags = SSL3
                 | Tls10 `elem` flags = TLS10
-                | otherwise          = TLS12
+                | otherwise          = TLS13ID18
             supportedVers
                 | NoVersionDowngrade `elem` flags = [tlsConnectVer]
                 | otherwise = filter (<= tlsConnectVer) allVers
-            allVers = [SSL3, TLS10, TLS11, TLS12]
+            allVers = [SSL3, TLS10, TLS11, TLS12, TLS13ID18]
             validateCert = not (NoValidateCert `elem` flags)
 
 data Flag = Verbose | Debug | IODebug | NoValidateCert | Session | Http11

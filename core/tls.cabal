@@ -123,7 +123,8 @@ Library
                      Network.TLS.Types
                      Network.TLS.Wire
                      Network.TLS.X509
-  ghc-options:       -Wall -fwarn-tabs -fno-warn-unused-imports
+--  ghc-options:       -Wall -fwarn-tabs -fno-warn-unused-imports
+  ghc-options:       -Wall
   if flag(compat)
     cpp-options:     -DSSLV2_COMPATIBLE
 
@@ -144,7 +145,8 @@ Test-Suite test-tls
                    , x509
                    , x509-validation
                    , hourglass
-  ghc-options:       -Wall -fno-warn-orphans -fno-warn-missing-signatures -fwarn-tabs
+--  ghc-options:       -Wall -fno-warn-orphans -fno-warn-missing-signatures -fwarn-tabs
+  ghc-options:       -Wall
 
 Benchmark bench-tls
   hs-source-dirs:    Benchmarks Tests

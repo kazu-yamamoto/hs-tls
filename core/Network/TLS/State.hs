@@ -153,6 +153,7 @@ finishHandshakeTypeMaterial HandshakeType_CertRequest     = True
 finishHandshakeTypeMaterial HandshakeType_CertVerify      = True
 finishHandshakeTypeMaterial HandshakeType_Finished        = True
 finishHandshakeTypeMaterial HandshakeType_NPN             = True
+finishHandshakeTypeMaterial HandshakeType_HelloRetryRequest13 = True -- fixme
 
 finishHandshakeMaterial :: Handshake -> Bool
 finishHandshakeMaterial = finishHandshakeTypeMaterial . typeOfHandshake
@@ -169,6 +170,7 @@ certVerifyHandshakeTypeMaterial HandshakeType_CertRequest     = True
 certVerifyHandshakeTypeMaterial HandshakeType_CertVerify      = False
 certVerifyHandshakeTypeMaterial HandshakeType_Finished        = False
 certVerifyHandshakeTypeMaterial HandshakeType_NPN             = False
+certVerifyHandshakeTypeMaterial HandshakeType_HelloRetryRequest13 = True -- fixme
 
 certVerifyHandshakeMaterial :: Handshake -> Bool
 certVerifyHandshakeMaterial = certVerifyHandshakeTypeMaterial . typeOfHandshake

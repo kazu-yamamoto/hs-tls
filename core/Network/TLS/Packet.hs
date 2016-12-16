@@ -197,6 +197,7 @@ decodeHandshake cp ty = runGetErr ("handshake[" ++ show ty ++ "]") $ case ty of
     HandshakeType_NPN             -> do
         unless (cParamsSupportNPN cp) $ fail "unsupported handshake type"
         decodeNextProtocolNegotiation
+    HandshakeType_HelloRetryRequest13 -> decodeHelloRetryRequest
 
 decodeDeprecatedHandshake :: ByteString -> Either TLSError Handshake
 decodeDeprecatedHandshake b = runGetErr "deprecatedhandshake" getDeprecated b
@@ -240,14 +241,19 @@ decodeServerHello :: Get Handshake
 decodeServerHello = do
     ver           <- getVersion
     random        <- getServerRandom32
-    session       <- getSession
-    cipherid      <- getWord16
-    compressionid <- getWord8
-    r             <- remaining
-    exts <- if hasHelloExtensions ver && r > 0
-            then fmap fromIntegral getWord16 >>= getExtensions
-            else return []
-    return $ ServerHello ver random session cipherid compressionid exts
+    if ver <= TLS12 then do
+        session       <- getSession
+        cipherid      <- getWord16
+        compressionid <- getWord8
+        r             <- remaining
+        exts <- if hasHelloExtensions ver && r > 0
+                then fmap fromIntegral getWord16 >>= getExtensions
+                else return []
+        return $ ServerHello ver random session cipherid compressionid exts
+      else do
+        cipherid      <- getWord16
+        exts <- fmap fromIntegral getWord16 >>= getExtensions
+        return $ ServerHello13 ver random cipherid exts
 
 decodeServerHelloDone :: Get Handshake
 decodeServerHelloDone = return ServerHelloDone
@@ -360,6 +366,12 @@ decodeServerKeyXchg cp =
         Just cke -> ServerKeyXchg <$> decodeServerKeyXchgAlgorithmData (cParamsVersion cp) cke
         Nothing  -> ServerKeyXchg . SKX_Unparsed <$> (remaining >>= getBytes)
 
+decodeHelloRetryRequest :: Get Handshake
+decodeHelloRetryRequest = do
+    ver <- getVersion
+    exts <- (fromIntegral <$> getWord16) >>= getExtensions
+    return $ HelloRetryRequest13 ver exts
+
 encodeHandshake :: Handshake -> ByteString
 encodeHandshake o =
     let content = runPut $ encodeHandshakeContent o in
@@ -441,6 +453,14 @@ encodeHandshakeContent (HsNextProtocolNegotiation protocol) = do
     putOpaque8 protocol
     putOpaque8 $ B.replicate paddingLen 0
   where paddingLen = 32 - ((B.length protocol + 2) `mod` 32)
+encodeHandshakeContent (ServerHello13 ver random cipherId exts) = do
+    putVersion' ver
+    putServerRandom32 random
+    putWord16 cipherId
+    putExtensions exts -- fixme
+encodeHandshakeContent (HelloRetryRequest13 ver exts) = do
+    putVersion' ver
+    putExtensions exts -- fixme
 
 {- FIXME make sure it return error if not 32 available -}
 getRandom32 :: Get Bytes

@@ -16,12 +16,14 @@ import Network.TLS.Crypto.Types
 import Network.TLS.Context.Internal
 import Network.TLS.Parameters
 import Network.TLS.Struct
+import Network.TLS.Struct2
 import Network.TLS.Cipher
 import Network.TLS.Compression
-import Network.TLS.Packet
+import Network.TLS.Packet hiding (getExtensions)
 import Network.TLS.ErrT
 import Network.TLS.Extension
 import Network.TLS.IO
+import Network.TLS.Sending2
 import Network.TLS.Imports
 import Network.TLS.State hiding (getNegotiatedProtocol)
 import Network.TLS.Measurement
@@ -33,20 +35,33 @@ import Data.Maybe
 import Data.List (find, intersect)
 import qualified Data.ByteString as B
 import Data.ByteString.Char8 ()
+import Data.Typeable
 
 import Control.Monad.State
-import Control.Exception (SomeException)
+import Control.Exception (SomeException, Exception)
+import qualified Control.Exception as E
 
 import Network.TLS.Handshake.Common
+import Network.TLS.Handshake.Common2
 import Network.TLS.Handshake.Process
 import Network.TLS.Handshake.Certificate
 import Network.TLS.Handshake.Signature
 import Network.TLS.Handshake.Key
 import Network.TLS.Handshake.State
+import Network.TLS.Handshake.State2
+import Network.TLS.KeySchedule
+
+import Data.ByteArray (convert)
 
 handshakeClientWith :: ClientParams -> Context -> Handshake -> IO ()
 handshakeClientWith cparams ctx HelloRequest = handshakeClient cparams ctx
 handshakeClientWith _       _   _            = throwCore $ Error_Protocol ("unexpected handshake message received in handshakeClientWith", True, HandshakeFailure)
+
+data HelloSwitch = SwitchTLS13 !CipherID [ExtensionRaw]
+                 | HelloRetry !Version [ExtensionRaw]
+                 deriving (Show, Typeable)
+
+instance Exception HelloSwitch
 
 -- client part of handshake. send a bunch of handshake of client
 -- values intertwined with response from the server.
@@ -54,14 +69,20 @@ handshakeClient :: ClientParams -> Context -> IO ()
 handshakeClient cparams ctx = do
     updateMeasure ctx incrementNbHandshakes
     sentExtensions <- sendClientHello
-    recvServerHello sentExtensions
-    sessionResuming <- usingState_ ctx isSessionResuming
-    if sessionResuming
-        then sendChangeCipherAndFinish sendMaybeNPN ctx ClientRole
-        else do sendClientData cparams ctx
-                sendChangeCipherAndFinish sendMaybeNPN ctx ClientRole
-                recvChangeCipherAndFinish ctx
-    handshakeTerminate ctx
+    usingHState ctx getHandshakeMessages >>= print
+    ech <- E.try $ recvServerHello sentExtensions
+    usingHState ctx getHandshakeMessages >>= print
+    case ech of
+        Left (SwitchTLS13 cipher exts) -> handshakeClient2 cparams ctx cipher exts
+        Left (HelloRetry _ _) -> error "HelloRetry" -- fixme
+        Right () -> do
+            sessionResuming <- usingState_ ctx isSessionResuming
+            if sessionResuming
+                then sendChangeCipherAndFinish sendMaybeNPN ctx ClientRole
+                else do sendClientData cparams ctx
+                        sendChangeCipherAndFinish sendMaybeNPN ctx ClientRole
+                        recvChangeCipherAndFinish ctx
+            handshakeTerminate ctx
   where ciphers      = ctxCiphers ctx
         compressions = supportedCompressions $ ctxSupported ctx
         getExtensions = sequence [sniExtension
@@ -73,6 +94,9 @@ handshakeClient cparams ctx = do
                                  --,sessionTicketExtension
                                  ,signatureAlgExtension
                                  -- ,heartbeatExtension
+                                 ,versionExtension
+                                 ,keyshareExtension
+                                 ,pskModeExtension
                                  ]
 
         toExtensionRaw :: Extension e => e -> ExtensionRaw
@@ -86,12 +110,15 @@ handshakeClient cparams ctx = do
                          then return $ Just $ toExtensionRaw $ NextProtocolNegotiation []
                          else return Nothing
         alpnExtension = do
+            return $ Just $ toExtensionRaw $ ApplicationLayerProtocolNegotiation ["http/1.1"]
+            {-
             mprotos <- onSuggestALPN $ clientHooks cparams
             case mprotos of
                 Nothing -> return Nothing
                 Just protos -> do
                     usingState_ ctx $ setClientALPNSuggest protos
                     return $ Just $ toExtensionRaw $ ApplicationLayerProtocolNegotiation protos
+-}
         sniExtension = if clientUseServerNameIndication cparams
                          then return $ Just $ toExtensionRaw $ ServerName [ServerNameHostName $ fst $ clientServerIdentification cparams]
                          else return Nothing
@@ -102,17 +129,33 @@ handshakeClient cparams ctx = do
         --heartbeatExtension = return $ Just $ toExtensionRaw $ HeartBeat $ HeartBeat_PeerAllowedToSend
         --sessionTicketExtension = return $ Just $ toExtensionRaw $ SessionTicket
 
-        signatureAlgExtension = return $ Just $ toExtensionRaw $ SignatureAlgorithms $ supportedHashSignatures $ clientSupported cparams
+        signatureAlgExtension = return $ Just $ toExtensionRaw $ SignatureSchemes [SigScheme_RSApssSHA256, SigScheme_RSApkcs1SHA256, SigScheme_RSApkcs1SHA1]
+--        signatureAlgExtension = return $ Just $ toExtensionRaw $ SignatureAlgorithms $ supportedHashSignatures $ clientSupported cparams
+
+        versionExtension = return $ Just $ toExtensionRaw $ SupportedVersions [TLS13ID18, TLS12]
+
+        keyshareExtension = do
+            -- fixme: try supportedGroups
+--            (priv, pub) <- ecdhGenerateKeyPair P256
+            (priv, pub) <- ecdhGenerateKeyPair X25519
+            usingHState ctx $ setECDHPrivate priv
+            let (g,p) = encodeECDHPublic pub
+                ent = KeyShareEntry g p
+            return $ Just $ toExtensionRaw $ KeyShareClientHello [ent]
+
+        pskModeExtension = do
+            return $ Just $ toExtensionRaw $ PskKeyExchangeModes [PSK_DHE_KE]
 
         sendClientHello = do
+            -- fixme -- "44 4F 57 4E 47 52 44 01"
             crand <- getStateRNG ctx 32 >>= return . ClientRandom
             let clientSession = Session . maybe Nothing (Just . fst) $ clientWantSessionResume cparams
                 highestVer = maximum $ supportedVersions $ ctxSupported ctx
-            extensions <- catMaybes <$> getExtensions
             startHandshake ctx highestVer crand
+            extensions <- catMaybes <$> getExtensions
             usingState_ ctx $ setVersionIfUnset highestVer
             sendPacket ctx $ Handshake
-                [ ClientHello highestVer crand clientSession (map cipherID (ciphers mempty))
+                [ ClientHello TLS12 crand clientSession (map cipherID (ciphers mempty))
                               (map compressionID compressions) extensions Nothing
                 ]
             return $ map (\(ExtensionRaw i _) -> i) extensions
@@ -132,6 +175,13 @@ handshakeClient cparams ctx = do
         recvServerHello sentExts = runRecvState ctx recvState
           where recvState = RecvStateNext $ \p ->
                     case p of
+                        Handshake [HelloRetryRequest13 ver exts] ->
+                            E.throwIO $ HelloRetry ver exts
+                        Handshake [sh@(ServerHello13 _ _ c es)] -> do
+                            let encoded = encodeHandshake sh
+                            usingHState ctx $ addHandshakeMessage encoded
+                            usingHState ctx $ updateHandshakeDigest encoded
+                            E.throwIO $ SwitchTLS13 c es
                         Handshake hs -> onRecvStateHandshake ctx (RecvStateHandshake $ onServerHello ctx cparams sentExts) hs
                         Alert a      ->
                             case a of
@@ -409,3 +459,55 @@ processCertificateRequest ctx p = processServerHelloDone ctx p
 processServerHelloDone :: Context -> Handshake -> IO (RecvState m)
 processServerHelloDone _ ServerHelloDone = return RecvStateDone
 processServerHelloDone _ p = unexpected (show p) (Just "server hello data")
+
+handshakeClient2 :: ClientParams -> Context -> CipherID -> [ExtensionRaw]
+                 -> IO ()
+handshakeClient2 _cparams ctx cipher exts = do
+    usedCipher <- case find ((==) cipher . cipherID) (ctxCiphers ctx mempty) of
+                     Nothing  -> throwCore $ Error_Protocol ("server choose unknown cipher", True, HandshakeFailure)
+                     Just alg -> return alg
+    let usedHash = cipherHash usedCipher
+        hashSize = hashDigestSize usedHash
+
+        zero = B.replicate hashSize 0
+    putStrLn "TLS 1.3"
+    usingState_ ctx getVersion >>= print
+    print usedCipher
+    usingHState ctx $ setHelloParameters2 usedCipher
+    KeyShareEntry grp pub <- case extensionLookup extensionID_KeyShare exts >>= extensionDecode MsgTServerHello of
+        Just (KeyShareServerHello ks) -> return ks
+        _                             -> throwCore $ Error_Protocol ("key exchange not implemented", True, HandshakeFailure)
+    clientPri <- usingHState ctx getECDHPrivate
+    let Right serverPub = decodeECDHPublic grp pub
+        shared = ecdhGetShared serverPub clientPri
+        ecdhe = convert shared
+    let psk = zero
+        rtt0 = False
+    hCh <- getHandshakeContextHash ctx -- fixme
+    let earlySecret = hkdfExtract usedHash zero psk
+        clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "client early traffic secret" hCh
+    let handshakeSecret = hkdfExtract usedHash earlySecret ecdhe
+    hChSh <- getHandshakeContextHash ctx
+    let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "client handshake traffic secret" hChSh
+        serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "server handshake traffic secret" hChSh
+    setRxtate ctx usedHash usedCipher serverHandshakeTrafficSecret
+    setTxtate ctx usedHash usedCipher $ if rtt0 then clientEarlyTrafficSecret else clientHandshakeTrafficSecret
+    Right (Handshake2 [EncryptedExtensions2 eexts]) <- recvPacket2 ctx
+    print eexts
+    Right (Handshake2 [Certificate2 _ _ _]) <- recvPacket2 ctx
+    -- FIXME: should call processCertificate
+    Right (Handshake2 [CertVerify2 sa _]) <- recvPacket2 ctx
+    print sa
+    hChSv <- getHandshakeContextHash ctx
+    let verifyData' = makeVerifyData usedHash serverHandshakeTrafficSecret hChSv
+    Right (Handshake2 [Finished2 verifyData]) <- recvPacket2 ctx
+    print $ verifyData' == verifyData
+    let masterSecret = hkdfExtract usedHash handshakeSecret zero
+    hChSf <- getHandshakeContextHash ctx
+    let clientTrafficSecret0 = deriveSecret usedHash masterSecret "client application traffic secret" hChSf
+        serverTrafficSecret0 = deriveSecret usedHash masterSecret "server application traffic secret" hChSf
+    fish <- makeFinished ctx usedHash clientHandshakeTrafficSecret >>= writeHandshakePacket2 ctx
+    sendBytes2 ctx fish
+    setTxtate ctx usedHash usedCipher clientTrafficSecret0
+    setRxtate ctx usedHash usedCipher serverTrafficSecret0
+    setEstablished ctx Established

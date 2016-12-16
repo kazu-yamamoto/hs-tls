@@ -248,6 +248,7 @@ data HandshakeType =
     | HandshakeType_ClientKeyXchg
     | HandshakeType_Finished
     | HandshakeType_NPN -- Next Protocol Negotiation extension
+    | HandshakeType_HelloRetryRequest13
     deriving (Show,Eq)
 
 newtype BigNum = BigNum Bytes
@@ -321,6 +322,8 @@ data Handshake =
     | CertVerify DigitallySigned
     | Finished FinishedData
     | HsNextProtocolNegotiation Bytes -- NPN extension
+    | ServerHello13 !Version !ServerRandom !CipherID [ExtensionRaw]
+    | HelloRetryRequest13 !Version [ExtensionRaw]
     deriving (Show,Eq)
 
 packetType :: Packet -> ProtocolType
@@ -341,6 +344,8 @@ typeOfHandshake (CertRequest {})             = HandshakeType_CertRequest
 typeOfHandshake (CertVerify {})              = HandshakeType_CertVerify
 typeOfHandshake (Finished {})                = HandshakeType_Finished
 typeOfHandshake (HsNextProtocolNegotiation {}) = HandshakeType_NPN
+typeOfHandshake (ServerHello13 {})           = HandshakeType_ServerHello
+typeOfHandshake (HelloRetryRequest13 {})     = HandshakeType_HelloRetryRequest13
 
 numericalVer :: Version -> (Word8, Word8)
 numericalVer SSL2  = (2, 0)
@@ -413,6 +418,7 @@ instance TypeValuable HandshakeType where
     valOfType HandshakeType_HelloRequest    = 0
     valOfType HandshakeType_ClientHello     = 1
     valOfType HandshakeType_ServerHello     = 2
+    valOfType HandshakeType_HelloRetryRequest13 = 6
     valOfType HandshakeType_Certificate     = 11
     valOfType HandshakeType_ServerKeyXchg   = 12
     valOfType HandshakeType_CertRequest     = 13
@@ -425,6 +431,7 @@ instance TypeValuable HandshakeType where
     valToType 0  = Just HandshakeType_HelloRequest
     valToType 1  = Just HandshakeType_ClientHello
     valToType 2  = Just HandshakeType_ServerHello
+    valToType 6  = Just HandshakeType_HelloRetryRequest13
     valToType 11 = Just HandshakeType_Certificate
     valToType 12 = Just HandshakeType_ServerKeyXchg
     valToType 13 = Just HandshakeType_CertRequest

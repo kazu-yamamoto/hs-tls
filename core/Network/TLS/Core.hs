@@ -148,6 +148,9 @@ recvData2 ctx = liftIO $ do
             finishedAction <- popPendingAction ctx
             finishedAction verifyData'
             recvData2 ctx
+        process (Handshake2 [NewSessionTicket2 _ _ _ _]) = do
+            -- fixme: just ignore it currently
+            recvData2 ctx
         -- when receiving empty appdata, we just retry to get some data.
         process (AppData2 "") = recvData2 ctx
         process (AppData2 x) = do
