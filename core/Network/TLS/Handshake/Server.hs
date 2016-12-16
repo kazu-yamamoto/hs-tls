@@ -345,7 +345,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
 
         generateSKX_ECDHE sigAlg = do
             grps <- usingState_ ctx getClientGroupSuggest
-            let common = supportedGroups (ctxSupported ctx) `intersect` availableEllipticGroups `intersect` fromJust "ClientEllipticCurveSuggest" grps
+            let common = supportedGroups (ctxSupported ctx) `intersect` availableGroups `intersect` fromJust "ClientCurveSuggest" grps
             grp <- case common of
                 []  -> throwCore $ Error_Protocol ("no common elliptic curves", True, HandshakeFailure)
                 x:_ -> return x

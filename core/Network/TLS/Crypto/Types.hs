@@ -32,5 +32,5 @@ toGroup 259 = Just FFDHE6144
 toGroup 260 = Just FFDHE8192
 toGroup _   = Nothing
 
-availableEllipticGroups :: [Group]
-availableEllipticGroups = [P256,P384,P521,X25519]
+availableGroups :: [Group]
+availableGroups = [P256,P384,P521,X25519]
