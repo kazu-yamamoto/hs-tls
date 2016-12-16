@@ -10,9 +10,7 @@
 --
 module Network.TLS.Sending2 (writePacket2, writeHandshakePacket2) where
 
-import Control.Applicative
 import Control.Monad.State
-import Control.Concurrent.MVar
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
@@ -27,7 +25,6 @@ import Network.TLS.Packet2
 import Network.TLS.Hooks
 import Network.TLS.Context.Internal
 import Network.TLS.Handshake.State
-import Network.TLS.Util
 import Network.TLS.Wire
 
 makeRecord :: Packet2 -> RecordM Record2

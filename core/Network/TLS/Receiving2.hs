@@ -14,7 +14,6 @@ module Network.TLS.Receiving2 (processPacket2) where
 
 import Control.Monad
 import Control.Monad.State
-import Control.Concurrent.MVar
 
 import Network.TLS.Context.Internal
 import Network.TLS.Struct
