@@ -27,7 +27,6 @@ module Network.TLS.Extension
     , extensionID_SupportedVersions
     , extensionID_Cookie
     , extensionID_PskKeyExchangeModes
-    , extensionID_TicketEarlyDataInfo
     -- all implemented extensions
     , ServerNameType(..)
     , ServerName(..)
@@ -52,7 +51,6 @@ module Network.TLS.Extension
     , PskIdentity(..)
     , PreSharedKey(..)
     , EarlyDataIndication(..)
-    , TicketEarlyDataInfo(..)
     ) where
 
 import qualified Data.ByteString as B
@@ -100,7 +98,6 @@ extensionID_ServerName
   , extensionID_SupportedVersions
   , extensionID_Cookie
   , extensionID_PskKeyExchangeModes
-  , extensionID_TicketEarlyDataInfo
   , extensionID_SecureRenegotiation :: ExtensionID
 extensionID_ServerName                          = 0x0 -- RFC6066
 extensionID_MaxFragmentLength                   = 0x1 -- RFC6066
@@ -133,7 +130,6 @@ extensionID_EarlyData                           = 0x2a -- TLS 1.3
 extensionID_SupportedVersions                   = 0x2b -- TLS 1.3
 extensionID_Cookie                              = 0x2c -- TLS 1.3
 extensionID_PskKeyExchangeModes                 = 0x2d -- TLS 1.3
-extensionID_TicketEarlyDataInfo                 = 0x2e -- TLS 1.3
 extensionID_SecureRenegotiation                 = 0xff01 -- RFC5746
 
 definedExtensions :: [ExtensionID]
@@ -181,12 +177,13 @@ supportedExtensions = [ extensionID_ServerName
                       , extensionID_SupportedVersions
                       , extensionID_Cookie
                       , extensionID_PskKeyExchangeModes
-                      , extensionID_TicketEarlyDataInfo
                       ]
 
 data MessageType = MsgTClientHello
                  | MsgTServerHello
                  | MsgTHelloRetryRequest
+                 | MsgTEncryptedExtensions
+                 | MsgTNewSessionTicket
                  deriving (Eq,Show)
 
 -- | Extension class to transform bytes to and from a high level Extension type.
@@ -409,6 +406,7 @@ instance Extension KeyShare where
         case mgrp of
           Nothing  -> fail "decoding KeyShare for HRR"
           Just grp -> return $ KeyShareHRR grp
+    extensionDecode _ = error "extensionDecode: KeyShare"
 
 data PskKexMode = PSK_KE | PSK_DHE_KE deriving (Eq, Show)
 
@@ -471,16 +469,14 @@ instance Extension PreSharedKey where
             return (len, binder)
     extensionDecode _ = error "decoding PreShareKey"
 
-data EarlyDataIndication = EarlyDataIndication deriving (Eq, Show)
-
+data EarlyDataIndication = EarlyDataIndication (Maybe Word32) deriving (Eq, Show)
 instance Extension EarlyDataIndication where
     extensionID _ = extensionID_EarlyData
-    extensionEncode EarlyDataIndication = runPut $ putBytes B.empty
-    extensionDecode _ = return $ Just EarlyDataIndication
-
-data TicketEarlyDataInfo = TicketEarlyDataInfo Word32 deriving (Eq, Show)
-
-instance Extension TicketEarlyDataInfo where
-    extensionID _ = extensionID_TicketEarlyDataInfo
-    extensionEncode (TicketEarlyDataInfo w) = runPut $ putWord32 w
-    extensionDecode _ = runGetMaybe $ TicketEarlyDataInfo <$> getWord32
+    extensionEncode (EarlyDataIndication Nothing)   = runPut $ putBytes B.empty
+    extensionEncode (EarlyDataIndication (Just w32)) = runPut $ putWord32 w32
+    extensionDecode MsgTClientHello         = return $ Just (EarlyDataIndication Nothing)
+    extensionDecode MsgTEncryptedExtensions = return $ Just (EarlyDataIndication Nothing)
+    extensionDecode MsgTNewSessionTicket    = runGetMaybe $ do
+        w32 <- getWord32
+        return (EarlyDataIndication (Just w32))
+    extensionDecode _                       = error "extensionDecode: EarlyDataIndication"

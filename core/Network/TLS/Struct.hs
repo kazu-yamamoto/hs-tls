@@ -204,7 +204,6 @@ data AlertLevel =
 
 data AlertDescription =
       CloseNotify
-    | EndOfEarlyData
     | UnexpectedMessage
     | BadRecordMac
     | DecryptionFailed       -- ^ deprecated alert, should never be sent by compliant implementation
@@ -323,7 +322,7 @@ data Handshake =
     | CertVerify DigitallySigned
     | Finished FinishedData
     | ServerHello' !Version !ServerRandom !CipherID [ExtensionRaw] -- TLS 1.3
-    | HelloRetryRequest !Version [ExtensionRaw] -- TLS 1.3
+    | HelloRetryRequest !Version !CipherID ![ExtensionRaw] -- TLS 1.3
     deriving (Show,Eq)
 
 packetType :: Packet -> ProtocolType
@@ -352,7 +351,7 @@ numericalVer SSL3  = (3, 0)
 numericalVer TLS10 = (3, 1)
 numericalVer TLS11 = (3, 2)
 numericalVer TLS12 = (3, 3)
-numericalVer TLS13ID18 = (0x7f, 0x12)
+numericalVer TLS13ID19 = (0x7f, 0x13)
 numericalVer TLS13 = (3, 4)
 
 verOfNum :: (Word8, Word8) -> Maybe Version
@@ -362,7 +361,7 @@ verOfNum (3, 1) = Just TLS10
 verOfNum (3, 2) = Just TLS11
 verOfNum (3, 3) = Just TLS12
 verOfNum (3, 4) = Just TLS13
-verOfNum (0x7f, 0x12) = Just TLS13ID18
+verOfNum (0x7f, 0x13) = Just TLS13ID19
 verOfNum _      = Nothing
 
 class TypeValuable a where
@@ -445,7 +444,6 @@ instance TypeValuable AlertLevel where
 
 instance TypeValuable AlertDescription where
     valOfType CloseNotify            = 0
-    valOfType EndOfEarlyData         = 1
     valOfType UnexpectedMessage      = 10
     valOfType BadRecordMac           = 20
     valOfType DecryptionFailed       = 21
@@ -479,7 +477,6 @@ instance TypeValuable AlertDescription where
     valOfType CertificateRequired     = 116
 
     valToType 0   = Just CloseNotify
-    valToType 1   = Just EndOfEarlyData
     valToType 10  = Just UnexpectedMessage
     valToType 20  = Just BadRecordMac
     valToType 21  = Just DecryptionFailed

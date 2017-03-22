@@ -28,8 +28,9 @@ putExtensions :: [ExtensionRaw] -> Put
 putExtensions es = putOpaque16 (runPut $ mapM_ putExtension es)
 
 encodeHandshake13' :: Handshake13 -> ByteString
-encodeHandshake13' (HelloRetryRequest13 ver exts) = runPut $ do
+encodeHandshake13' (HelloRetryRequest13 ver cipherId exts) = runPut $ do
     putVersion' ver
+    putWord16 cipherId
     putExtensions exts
 encodeHandshake13' (ServerHello13 ver random cipherId exts) = runPut $ do
     putVersion' ver
@@ -54,6 +55,7 @@ encodeHandshake13' (NewSessionTicket13 life ageadd ticket exts) = runPut $ do
     putWord32 ageadd
     putOpaque16 ticket
     putExtensions exts
+encodeHandshake13' EndOfEarlyData13 = ""
 encodeHandshake13' _ = error "encodeHandshake13'"
 
 encodeHandshakeHeader13 :: HandshakeType13 -> Int -> ByteString
@@ -83,6 +85,7 @@ decodeHandshake13 ty = runGetErr ("handshake[" ++ show ty ++ "]") $ case ty of
     HandshakeType_Certificate13         -> decodeCertificate13
     HandshakeType_CertVerify13          -> decodeCertVerify13
     HandshakeType_NewSessionTicket13    -> decodeNewSessionTicket13
+    HandshakeType_EndOfEarlyData13      -> return EndOfEarlyData13
     _x                                  -> error $ "decodeHandshake13 " ++ show _x
 
 decodeFinished13 :: Get Handshake13

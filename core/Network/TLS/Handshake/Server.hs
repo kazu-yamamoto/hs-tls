@@ -118,7 +118,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
             _                             -> []
         serverVersions = supportedVersions $ ctxSupported ctx
         mver
-          | (TLS13ID18 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
+          | (TLS13ID19 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
                 findHighestVersionFrom13 clientVersions serverVersions
           | otherwise = findHighestVersionFrom clientVersion serverVersions
 
@@ -647,7 +647,7 @@ handshakeServerWithTLS13 sparams ctx chosenVersion allCreds exts clientCiphers _
     usingHState ctx getHandshakeMessages >>= mapM_ (putStrLn . showBytesHex)
 -}
     case findKeyShare keyShares serverGroups of
-      Nothing -> helloRetryRequest sparams ctx chosenVersion exts serverGroups
+      Nothing -> helloRetryRequest sparams ctx chosenVersion usedCipher exts serverGroups
       Just keyShare -> do
         print $ keyShareEntryGroup keyShare
         -- Deciding signature algorithm
@@ -679,9 +679,14 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     usingHState ctx $ setTLS13Group $ keyShareEntryGroup clientKeyShare
     srand <- setServerParameter
     (psk, binderInfo) <- choosePSK
-    hCh <- getHandshakeContextHash ctx
+    hCh <- transcriptHash ctx
     let earlySecret = hkdfExtract usedHash zero psk
         clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "client early traffic secret" hCh
+{-
+    putStrLn $ "hCh: " ++ showBytesHex hCh
+    putStrLn $ "earlySecret: " ++ showBytesHex earlySecret
+    putStrLn $ "clientEarlyTrafficSecret: " ++ showBytesHex clientEarlyTrafficSecret
+-}
     extensions <- checkBinder earlySecret binderInfo
     let authenticated = isJust binderInfo
         rtt0OK = authenticated && rtt0 && rtt0accept
@@ -699,27 +704,50 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
            else
              putStrLn "<<<Full negotiation>>>"
     (ecdhe,keyShare) <- makeServerKeyShare ctx clientKeyShare
-    let handshakeSecret = hkdfExtract usedHash earlySecret ecdhe
+    let handshakeSecret = hkdfExtract usedHash (deriveSecret usedHash earlySecret "derived secret" (hash usedHash "")) ecdhe
     helo <- makeServerHello keyShare srand extensions >>= writeHandshakePacket13 ctx
     ----------------------------------------------------------------
-    hChSh <- getHandshakeContextHash ctx
+    hChSh <- transcriptHash ctx
     let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "client handshake traffic secret" hChSh
         serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "server handshake traffic secret" hChSh
+{-
+    putStrLn $ "handshakeSecret: " ++ showBytesHex handshakeSecret
+    putStrLn $ "hChSh: " ++ showBytesHex hChSh
+    usingHState ctx getHandshakeMessages >>= mapM_ (putStrLn . showBytesHex)
+    putStrLn $ "serverHandshakeTrafficSecret: " ++ showBytesHex serverHandshakeTrafficSecret
+    putStrLn $ "clientHandshakeTrafficSecret: " ++ showBytesHex clientHandshakeTrafficSecret
+    if rtt0OK then
+       putStrLn "---- setRxState ctx usedHash usedCipher clientEarlyTrafficSecret"
+     else
+       putStrLn "---- setRxState ctx usedHash usedCipher clientHandshakeTrafficSecret"
+-}
     setRxState ctx usedHash usedCipher $ if rtt0OK then clientEarlyTrafficSecret else clientHandshakeTrafficSecret
     setTxState ctx usedHash usedCipher serverHandshakeTrafficSecret
     ----------------------------------------------------------------
     serverHandshake <- makeServerHandshake authenticated serverHandshakeTrafficSecret rtt0OK
     sendBytes13 ctx $ B.concat (helo : serverHandshake)
     ----------------------------------------------------------------
-    let masterSecret = hkdfExtract usedHash handshakeSecret zero
-    hChSf <- getHandshakeContextHash ctx
+    let masterSecret = hkdfExtract usedHash (deriveSecret usedHash handshakeSecret "derived secret" (hash usedHash "")) zero
+    hChSf <- transcriptHash ctx
+    when rtt0OK $ usingHState ctx $ do
+        let eoed = encodeHandshake13 EndOfEarlyData13
+        updateHandshakeDigest eoed
+        addHandshakeMessage eoed
+    hChEoed <- transcriptHash ctx
     let clientTrafficSecret0 = deriveSecret usedHash masterSecret "client application traffic secret" hChSf
         serverTrafficSecret0 = deriveSecret usedHash masterSecret "server application traffic secret" hChSf
-        verifyData = makeVerifyData usedHash clientHandshakeTrafficSecret hChSf
-        clientFinished = encodeHandshake13 $ Finished13 verifyData
+        verifyData = makeVerifyData usedHash clientHandshakeTrafficSecret hChEoed
+        pendingTranscript = encodeHandshake13 $ Finished13 verifyData
     ----------------------------------------------------------------
+{-
+    putStrLn $ "hChSf: " ++ showBytesHex hChSf
+    putStrLn $ "hChEoed: " ++ showBytesHex hChEoed
+    putStrLn $ "masterSecret: " ++ showBytesHex masterSecret
+    putStrLn $ "serverTrafficSecret0: " ++ showBytesHex serverTrafficSecret0
+    putStrLn $ "clientTrafficSecret0: " ++ showBytesHex clientTrafficSecret0
+-}
     setTxState ctx usedHash usedCipher serverTrafficSecret0
-    sendNewSessionTicket masterSecret clientFinished
+    sendNewSessionTicket masterSecret pendingTranscript
     ----------------------------------------------------------------
     let established = if rtt0OK then EarlyDataAllowed else EarlyDataNotAllowed
     setEstablished ctx established
@@ -728,17 +756,18 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
               setEstablished ctx Established
               setRxState ctx usedHash usedCipher clientTrafficSecret0
           | otherwise = throwCore $ Error_Protocol ("cannot verify finished", True, HandshakeFailure)
+        endOfEarlyDataAction = \_ -> do
+            setRxState ctx usedHash usedCipher clientHandshakeTrafficSecret
     if rtt0OK then do
-        let alertAction _ = setRxState ctx usedHash usedCipher clientHandshakeTrafficSecret
-        setPendingActions ctx [alertAction, finishedAction]
-      else
+        setPendingActions ctx [endOfEarlyDataAction, finishedAction]
+      else do
         setPendingActions ctx [finishedAction]
   where
     setServerParameter = do
         srand <- ServerRandom <$> getStateRNG ctx 32
         usingHState ctx $ setPrivateKey privKey
         usingState_ ctx $ setVersion chosenVersion
-        usingHState ctx $ setHelloParameters13 usedCipher
+        usingHState ctx $ setHelloParameters13 usedCipher False
         return srand
 
     choosePSK = case extensionLookup extensionID_PreSharedKey exts >>= extensionDecode MsgTClientHello of
@@ -770,8 +799,8 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
 
     rtt0accept = serverAccept0RTT sparams
     rtt0 = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTClientHello of
-             Just EarlyDataIndication -> True
-             Nothing                  -> False
+             Just (EarlyDataIndication _) -> True
+             Nothing                      -> False
 
     checkBinder _ Nothing = return []
     checkBinder earlySecret (Just (binder,n,tlen)) = do
@@ -792,7 +821,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
         let CertificateChain cs = certChain
             ess = replicate (length cs) []
         cert <- writeHandshakePacket13 ctx $ Certificate13 "" certChain ess
-        hChSc <- getHandshakeContextHash ctx
+        hChSc <- transcriptHash ctx
         vrfy <- makeServerCertVerify ctx sigAlgo privKey hChSc >>= writeHandshakePacket13 ctx
         fish <- makeFinished ctx usedHash serverHandshakeTrafficSecret >>= writeHandshakePacket13 ctx
         return [eext, cert, vrfy, fish]
@@ -812,15 +841,15 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
               Just _  -> ExtensionRaw extensionID_ServerName "" : extensions'
               Nothing -> extensions'
         let extensions
-              | rtt0OK    = ExtensionRaw extensionID_EarlyData (extensionEncode EarlyDataIndication) : extensions''
+              | rtt0OK = ExtensionRaw extensionID_EarlyData (extensionEncode (EarlyDataIndication Nothing)) : extensions''
               | otherwise = extensions''
         return $ EncryptedExtensions13 extensions
 
-    sendNewSessionTicket masterSecret clientFinished = when sendNST $ do
+    sendNewSessionTicket masterSecret pendingTranscript = when sendNST $ do
         usingHState ctx $ do
-            updateHandshakeDigest clientFinished
-            addHandshakeMessage clientFinished
-        hChCf <- getHandshakeContextHash ctx
+            updateHandshakeDigest pendingTranscript
+            addHandshakeMessage pendingTranscript
+        hChCf <- transcriptHash ctx
         let resumptionSecret = deriveSecret usedHash masterSecret "resumption master secret" hChCf
             life = 86400 -- 1 day in second: fixme hard coding
         (ticket, add) <- createSessionTicket life resumptionSecret
@@ -843,18 +872,19 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
            grp = keyShareEntryGroup clientKeyShare
         createNewSessionTicket life add ticket = NewSessionTicket13 life add ticket extensions
           where
-            tedi = extensionEncode $ TicketEarlyDataInfo 2048 -- 2 KiB: fixme hard coding
-            extensions = [ExtensionRaw extensionID_TicketEarlyDataInfo tedi]
+            tedi = extensionEncode $ EarlyDataIndication (Just 2048) -- 2 KiB: fixme hard coding
+            extensions = [ExtensionRaw extensionID_EarlyData tedi]
 
     hashSize = hashDigestSize usedHash
     zero = B.replicate hashSize 0
 
-helloRetryRequest :: MonadIO m => ServerParams -> Context -> Version -> [ExtensionRaw] -> [Group] -> m ()
-helloRetryRequest sparams ctx chosenVersion exts serverGroups = liftIO $ do
+helloRetryRequest :: MonadIO m => ServerParams -> Context -> Version -> Cipher -> [ExtensionRaw] -> [Group] -> m ()
+helloRetryRequest sparams ctx chosenVersion usedCipher exts serverGroups = liftIO $ do
     twice <- usingHState ctx getTLS13HRR
     when twice $
         throwCore $ Error_Protocol ("Hello retry not allowed again", True, HandshakeFailure)
     usingHState ctx $ setTLS13HRR True
+    usingHState ctx $ setHelloParameters13 usedCipher True
     let clientGroups = case extensionLookup extensionID_NegotiatedGroups exts >>= extensionDecode MsgTClientHello of
           Just (NegotiatedGroups gs) -> gs
           Nothing                    -> []
@@ -863,7 +893,7 @@ helloRetryRequest sparams ctx chosenVersion exts serverGroups = liftIO $ do
       [] -> throwCore $ Error_Protocol ("key exchange not implemented", True, HandshakeFailure)
       g:_ -> do
           let ext = ExtensionRaw extensionID_KeyShare $ extensionEncode $ KeyShareHRR g
-              hrr = HelloRetryRequest13 chosenVersion [ext]
+              hrr = HelloRetryRequest13 chosenVersion (cipherID usedCipher) [ext]
           putStrLn $ "Sending hello retry request for " ++ show g
           sendPacket13 ctx $ Handshake13 [hrr]
           handshakeServer sparams ctx

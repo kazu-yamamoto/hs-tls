@@ -347,8 +347,9 @@ decodeServerKeyXchg cp =
 decodeHelloRetryRequest :: Get Handshake
 decodeHelloRetryRequest = do
     ver <- getVersion
+    cipherId <- getWord16
     exts <- (fromIntegral <$> getWord16) >>= getExtensions
-    return $ HelloRetryRequest ver exts
+    return $ HelloRetryRequest ver cipherId exts
 
 encodeHandshake :: Handshake -> ByteString
 encodeHandshake o =
@@ -431,8 +432,9 @@ encodeHandshakeContent (ServerHello' ver random cipherId exts) = do
     putServerRandom32 random
     putWord16 cipherId
     putExtensions exts -- fixme
-encodeHandshakeContent (HelloRetryRequest ver exts) = do
+encodeHandshakeContent (HelloRetryRequest ver cipherId exts) = do
     putVersion' ver
+    putWord16 cipherId
     putExtensions exts -- fixme
 
 {- FIXME make sure it return error if not 32 available -}

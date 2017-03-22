@@ -11,6 +11,7 @@ module Network.TLS.Handshake.State13 where
 
 import Control.Concurrent.MVar
 import Control.Monad.State
+import qualified Data.ByteString as B
 import Network.TLS.Cipher
 import Network.TLS.Compression
 import Network.TLS.Context.Internal
@@ -49,24 +50,38 @@ setXState func encOrDec ctx h cipher secret =
       , stCompression = nullCompression
       }
 
-setHelloParameters13 :: Cipher -> HandshakeM ()
-setHelloParameters13 cipher = do
-    modify $ \hst -> hst
-                { hstPendingCipher      = Just cipher
-                , hstPendingCompression = nullCompression
-                , hstHandshakeDigest    = updateDigest $ hstHandshakeDigest hst
-                }
-  where hashAlg = cipherHash cipher
-        updateDigest (Left bytes) = Right $ foldl hashUpdate (hashInit hashAlg) $ reverse bytes
-        updateDigest (Right _)    = error "cannot initialize digest with another digest"
-
 getCryptState :: Context -> Bool -> IO CryptState
 getCryptState ctx isServer
  | isServer  = stCryptState <$> readMVar (ctxTxState ctx)
  | otherwise = stCryptState <$> readMVar (ctxRxState ctx)
 
-getHandshakeContextHash :: Context -> IO ByteString
-getHandshakeContextHash ctx = do
+setHelloParameters13 :: Cipher -> Bool -> HandshakeM ()
+setHelloParameters13 cipher isHRR = modify update
+  where
+    update hst = case hstPendingCipher hst of
+      Nothing -> hst {
+                  hstPendingCipher      = Just cipher
+                , hstPendingCompression = nullCompression
+                , hstHandshakeDigest    = updateDigest $ hstHandshakeDigest hst
+                }
+      Just oldcipher -> if cipher == oldcipher
+                        then hst
+                        else error "TLS 1.3: cipher changed"
+    hashAlg = cipherHash cipher
+    updateDigest (Left bytes) = Right $ calc $ reverse bytes
+    updateDigest (Right _)    = error "cannot initialize digest with another digest"
+    calc []       = error "setHelloParameters13.calc []"
+    calc bbs@(b:bs)
+      | isHRR     = let siz = hashDigestSize hashAlg
+                        b' = B.concat [
+                              "\254\0\0"
+                            , B.singleton (fromIntegral siz)
+                            , hash hashAlg b]
+                    in foldl hashUpdate (hashInit hashAlg) (b':bs)
+      | otherwise = foldl hashUpdate (hashInit hashAlg) bbs
+
+transcriptHash :: Context -> IO ByteString
+transcriptHash ctx = do
     Just hst <- getHState ctx -- fixme
     case hstHandshakeDigest hst of
       Right hashCtx -> return $ hashFinal hashCtx
