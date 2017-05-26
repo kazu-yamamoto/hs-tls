@@ -751,7 +751,7 @@ cipher_TLS13_AES128GCM_SHA256 = Cipher
     , cipherHash         = SHA256
     , cipherPRFHash      = Nothing
     , cipherKeyExchange  = CipherKeyExchange_TLS13
-    , cipherMinVer       = Just TLS13ID19
+    , cipherMinVer       = Just TLS13ID20
     }
 
 cipher_TLS13_AES256GCM_SHA384 :: Cipher
@@ -762,7 +762,7 @@ cipher_TLS13_AES256GCM_SHA384 = Cipher
     , cipherHash         = SHA384
     , cipherPRFHash      = Nothing
     , cipherKeyExchange  = CipherKeyExchange_TLS13
-    , cipherMinVer       = Just TLS13ID19
+    , cipherMinVer       = Just TLS13ID20
     }
 
 cipher_ECDHE_ECDSA_AES128CBC_SHA :: Cipher

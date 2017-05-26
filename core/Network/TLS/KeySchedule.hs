@@ -44,7 +44,7 @@ hkdfExpandLabel h secret label hashValue len = expand' h secret hkdfLabel len
     hkdfLabel :: ByteString
     hkdfLabel = runPut $ do
         putWord16 $ fromIntegral len
-        let tlsLabel = "TLS 1.3, " `BS.append` label
+        let tlsLabel = "tls13 " `BS.append` label
             tlsLabelLen = BS.length tlsLabel
             hashLen = BS.length hashValue -- not equal to len
         putWord8 $ fromIntegral tlsLabelLen

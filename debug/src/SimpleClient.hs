@@ -118,11 +118,11 @@ getDefaultParams flags host store sStorage certCredsRequest session earlyData =
                 | Tls11 `elem` flags = TLS11
                 | Ssl3  `elem` flags = SSL3
                 | Tls10 `elem` flags = TLS10
-                | otherwise          = TLS13ID19
+                | otherwise          = TLS13ID20
             supportedVers
                 | NoVersionDowngrade `elem` flags = [tlsConnectVer]
                 | otherwise = filter (<= tlsConnectVer) allVers
-            allVers = [SSL3, TLS10, TLS11, TLS12, TLS13ID19]
+            allVers = [SSL3, TLS10, TLS11, TLS12, TLS13ID20]
             validateCert = not (NoValidateCert `elem` flags)
 
 getGroups flags = case getGroup of

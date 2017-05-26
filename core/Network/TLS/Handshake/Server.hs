@@ -118,7 +118,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
             _                             -> []
         serverVersions = supportedVersions $ ctxSupported ctx
         mver
-          | (TLS13ID19 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
+          | (TLS13ID20 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
                 findHighestVersionFrom13 clientVersions serverVersions
           | otherwise = findHighestVersionFrom clientVersion serverVersions
 
@@ -681,7 +681,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     (psk, binderInfo) <- choosePSK
     hCh <- transcriptHash ctx
     let earlySecret = hkdfExtract usedHash zero psk
-        clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "client early traffic secret" hCh
+        clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "c e traffic" hCh
 {-
     putStrLn $ "hCh: " ++ showBytesHex hCh
     putStrLn $ "earlySecret: " ++ showBytesHex earlySecret
@@ -704,12 +704,12 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
            else
              putStrLn "<<<Full negotiation>>>"
     (ecdhe,keyShare) <- makeServerKeyShare ctx clientKeyShare
-    let handshakeSecret = hkdfExtract usedHash (deriveSecret usedHash earlySecret "derived secret" (hash usedHash "")) ecdhe
+    let handshakeSecret = hkdfExtract usedHash (deriveSecret usedHash earlySecret "derived" (hash usedHash "")) ecdhe
     helo <- makeServerHello keyShare srand extensions >>= writeHandshakePacket13 ctx
     ----------------------------------------------------------------
     hChSh <- transcriptHash ctx
-    let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "client handshake traffic secret" hChSh
-        serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "server handshake traffic secret" hChSh
+    let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "c hs traffic" hChSh
+        serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "s hs traffic" hChSh
 {-
     putStrLn $ "handshakeSecret: " ++ showBytesHex handshakeSecret
     putStrLn $ "hChSh: " ++ showBytesHex hChSh
@@ -727,15 +727,15 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     serverHandshake <- makeServerHandshake authenticated serverHandshakeTrafficSecret rtt0OK
     sendBytes13 ctx $ B.concat (helo : serverHandshake)
     ----------------------------------------------------------------
-    let masterSecret = hkdfExtract usedHash (deriveSecret usedHash handshakeSecret "derived secret" (hash usedHash "")) zero
+    let masterSecret = hkdfExtract usedHash (deriveSecret usedHash handshakeSecret "derived" (hash usedHash "")) zero
     hChSf <- transcriptHash ctx
     when rtt0OK $ usingHState ctx $ do
         let eoed = encodeHandshake13 EndOfEarlyData13
         updateHandshakeDigest eoed
         addHandshakeMessage eoed
     hChEoed <- transcriptHash ctx
-    let clientTrafficSecret0 = deriveSecret usedHash masterSecret "client application traffic secret" hChSf
-        serverTrafficSecret0 = deriveSecret usedHash masterSecret "server application traffic secret" hChSf
+    let clientApplicationTrafficSecret0 = deriveSecret usedHash masterSecret "c ap traffic" hChSf
+        serverApplicationTrafficSecret0 = deriveSecret usedHash masterSecret "s ap traffic" hChSf
         verifyData = makeVerifyData usedHash clientHandshakeTrafficSecret hChEoed
         pendingTranscript = encodeHandshake13 $ Finished13 verifyData
     ----------------------------------------------------------------
@@ -743,10 +743,10 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     putStrLn $ "hChSf: " ++ showBytesHex hChSf
     putStrLn $ "hChEoed: " ++ showBytesHex hChEoed
     putStrLn $ "masterSecret: " ++ showBytesHex masterSecret
-    putStrLn $ "serverTrafficSecret0: " ++ showBytesHex serverTrafficSecret0
-    putStrLn $ "clientTrafficSecret0: " ++ showBytesHex clientTrafficSecret0
+    putStrLn $ "serverApplicationTrafficSecret0: " ++ showBytesHex serverApplicationTrafficSecret0
+    putStrLn $ "clientApplicationTrafficSecret0: " ++ showBytesHex clientApplicationTrafficSecret0
 -}
-    setTxState ctx usedHash usedCipher serverTrafficSecret0
+    setTxState ctx usedHash usedCipher serverApplicationTrafficSecret0
     sendNewSessionTicket masterSecret pendingTranscript
     ----------------------------------------------------------------
     let established = if rtt0OK then EarlyDataAllowed else EarlyDataNotAllowed
@@ -754,7 +754,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     let finishedAction verifyData'
           | verifyData == verifyData' = do
               setEstablished ctx Established
-              setRxState ctx usedHash usedCipher clientTrafficSecret0
+              setRxState ctx usedHash usedCipher clientApplicationTrafficSecret0
           | otherwise = throwCore $ Error_Protocol ("cannot verify finished", True, HandshakeFailure)
         endOfEarlyDataAction = \_ -> do
             setRxState ctx usedHash usedCipher clientHandshakeTrafficSecret
@@ -850,7 +850,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
             updateHandshakeDigest pendingTranscript
             addHandshakeMessage pendingTranscript
         hChCf <- transcriptHash ctx
-        let resumptionSecret = deriveSecret usedHash masterSecret "resumption master secret" hChCf
+        let resumptionSecret = deriveSecret usedHash masterSecret "res master" hChCf
             life = 86400 -- 1 day in second: fixme hard coding
         (ticket, add) <- createSessionTicket life resumptionSecret
         let nst = createNewSessionTicket life add ticket

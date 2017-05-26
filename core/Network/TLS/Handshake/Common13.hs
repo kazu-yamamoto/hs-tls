@@ -120,7 +120,7 @@ makePSKBinder ctx earlySecret usedHash truncLen mch = do
           Just ch -> trunc ch : rmsgs0
           Nothing -> trunc (head rmsgs0) : tail rmsgs0
         hChTruncated = hash usedHash $ B.concat $ reverse rmsgs
-        binderKey = deriveSecret usedHash earlySecret "resumption psk binder key" (hash usedHash "")
+        binderKey = deriveSecret usedHash earlySecret "res binder" (hash usedHash "")
     return $ makeVerifyData usedHash binderKey hChTruncated
   where
     trunc x = B.take takeLen x

@@ -217,7 +217,7 @@ runTxState :: Context -> RecordM a -> IO (Either TLSError a)
 runTxState ctx f = do
     ver <- usingState_ ctx (getVersionWithDefault $ maximum $ supportedVersions $ ctxSupported ctx)
     let ver'
-         | ver >= TLS13ID19 = TLS10
+         | ver >= TLS13ID20 = TLS10
          | otherwise        = ver
     modifyMVar (ctxTxState ctx) $ \st ->
         case runRecordM f ver' st of
@@ -252,4 +252,4 @@ tls13orLater ctx = do
     ev <- liftIO $ usingState ctx $ getVersionWithDefault TLS10 -- fixme
     return $ case ev of
                Left  _ -> False
-               Right v -> v >= TLS13ID19
+               Right v -> v >= TLS13ID20

@@ -108,7 +108,7 @@ handshakeClient' cparams ctx groups mcrand = do
   where ciphers      = supportedCiphers $ ctxSupported ctx
         compressions = supportedCompressions $ ctxSupported ctx
         highestVer = maximum $ supportedVersions $ ctxSupported ctx
-        tls13 = highestVer >= TLS13ID19
+        tls13 = highestVer >= TLS13ID20
         getExtensions = sequence [sniExtension
                                  ,secureReneg
                                  ,alpnExtension
@@ -177,7 +177,7 @@ handshakeClient' cparams ctx groups mcrand = do
           | otherwise = case clientWantSessionResume cparams of
               Nothing -> return Nothing
               Just (sid, sdata)
-                | sessionVersion sdata >= TLS13ID19 -> do
+                | sessionVersion sdata >= TLS13ID20 -> do
                       let usedHash = sessionHash sdata
                           siz = hashDigestSize usedHash
                           zero = B.replicate siz 0
@@ -203,7 +203,7 @@ handshakeClient' cparams ctx groups mcrand = do
         clientSession = case clientWantSessionResume cparams of
             Nothing -> Session Nothing
             Just (sid, sdata)
-              | sessionVersion sdata >= TLS13ID19 -> Session Nothing
+              | sessionVersion sdata >= TLS13ID20 -> Session Nothing
               | otherwise                         -> Session (Just sid)
 
         adjustExtentions exts ch
@@ -211,7 +211,7 @@ handshakeClient' cparams ctx groups mcrand = do
           | otherwise = case clientWantSessionResume cparams of
               Nothing -> return exts
               Just (_, sdata)
-                | sessionVersion sdata >= TLS13ID19 -> do
+                | sessionVersion sdata >= TLS13ID20 -> do
                       let usedHash = sessionHash sdata
                           siz = hashDigestSize usedHash
                           zero = B.replicate siz 0
@@ -246,7 +246,7 @@ handshakeClient' cparams ctx groups mcrand = do
 
         checkZeroRTT = case clientWantSessionResume cparams of
             Just (_, sdata)
-              | sessionVersion sdata >= TLS13ID19 -> case client0RTTData cparams of
+              | sessionVersion sdata >= TLS13ID20 -> case client0RTTData cparams of
                 Just earlyData -> Just (sessionCipher sdata, earlyData)
                 Nothing        -> Nothing
             _ -> Nothing
@@ -263,7 +263,7 @@ handshakeClient' cparams ctx groups mcrand = do
                 hmsgs <- usingHState ctx getHandshakeMessages
                 let hCh = hash usedHash $ B.concat hmsgs -- XXX
                 Just earlySecret <- usingHState ctx getTLS13MasterSecret -- fixme
-                let clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "client early traffic secret" hCh
+                let clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "c e traffic" hCh
 {-
                 putStrLn $ "hCh: " ++ showBytesHex hCh
                 putStrLn $ "clientEarlyTrafficSecret: " ++ showBytesHex clientEarlyTrafficSecret
@@ -644,10 +644,10 @@ handshakeClient13' cparams ctx usedCipher usedHash exts = do
     switchToHandshakeSecret = do
         ecdhe <- calcSharedKey
         (earlySecret, resuming) <- makeEarlySecret
-        let handshakeSecret = hkdfExtract usedHash (deriveSecret usedHash earlySecret "derived secret" (hash usedHash "")) ecdhe
+        let handshakeSecret = hkdfExtract usedHash (deriveSecret usedHash earlySecret "derived" (hash usedHash "")) ecdhe
         hChSh <- transcriptHash ctx
-        let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "client handshake traffic secret" hChSh
-            serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "server handshake traffic secret" hChSh
+        let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "c hs traffic" hChSh
+            serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "s hs traffic" hChSh
 {-
         putStrLn $ "earlySecret: " ++ showBytesHex earlySecret
         putStrLn $ "handshakeSecret: " ++ showBytesHex handshakeSecret
@@ -660,18 +660,18 @@ handshakeClient13' cparams ctx usedCipher usedHash exts = do
         return (resuming, handshakeSecret, clientHandshakeTrafficSecret, serverHandshakeTrafficSecret)
 
     switchToTrafficSecret handshakeSecret hChSf = do
-        let masterSecret = hkdfExtract usedHash (deriveSecret usedHash handshakeSecret "derived secret" (hash usedHash "")) zero
-        let clientTrafficSecret0 = deriveSecret usedHash masterSecret "client application traffic secret" hChSf
-            serverTrafficSecret0 = deriveSecret usedHash masterSecret "server application traffic secret" hChSf
+        let masterSecret = hkdfExtract usedHash (deriveSecret usedHash handshakeSecret "derived" (hash usedHash "")) zero
+        let clientApplicationTrafficSecret0 = deriveSecret usedHash masterSecret "c ap traffic" hChSf
+            serverApplicationTrafficSecret0 = deriveSecret usedHash masterSecret "s ap traffic" hChSf
 {-
         putStrLn $ "hChSf: " ++ showBytesHex hChSf
         putStrLn $ "masterSecret: " ++ showBytesHex masterSecret
-        putStrLn $ "serverTrafficSecret0: " ++ showBytesHex serverTrafficSecret0
-        putStrLn $ "clientTrafficSecret0: " ++ showBytesHex clientTrafficSecret0
-        putStrLn "---- setTxState ctx usedHash usedCipher clientTrafficSecret0"
+        putStrLn $ "serverApplicationTrafficSecret0: " ++ showBytesHex serverApplicationTrafficSecret0
+        putStrLn $ "clientApplicationTrafficSecret0: " ++ showBytesHex clientApplicationTrafficSecret0
+        putStrLn "---- setTxState ctx usedHash usedCipher clientApplicationTrafficSecret0"
 -}
-        setTxState ctx usedHash usedCipher clientTrafficSecret0
-        setRxState ctx usedHash usedCipher serverTrafficSecret0
+        setTxState ctx usedHash usedCipher clientApplicationTrafficSecret0
+        setRxState ctx usedHash usedCipher serverApplicationTrafficSecret0
         return masterSecret
 
     calcSharedKey = do
@@ -735,7 +735,7 @@ handshakeClient13' cparams ctx usedCipher usedHash exts = do
 
     setResumptionSecret masterSecret = do
         hChCf <- transcriptHash ctx
-        let resumptionSecret = deriveSecret usedHash masterSecret "resumption master secret" hChCf
+        let resumptionSecret = deriveSecret usedHash masterSecret "res master" hChCf
         usingHState ctx $ setTLS13MasterSecret $ Just resumptionSecret
 
 update' :: Context -> Handshake -> IO ()
