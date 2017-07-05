@@ -118,7 +118,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
             _                             -> []
         serverVersions = supportedVersions $ ctxSupported ctx
         mver
-          | (TLS13ID20 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
+          | (TLS13ID21 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
                 findHighestVersionFrom13 clientVersions serverVersions
           | otherwise = findHighestVersionFrom clientVersion serverVersions
 
@@ -850,27 +850,29 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
             updateHandshakeDigest pendingTranscript
             addHandshakeMessage pendingTranscript
         hChCf <- transcriptHash ctx
-        let resumptionSecret = deriveSecret usedHash masterSecret "res master" hChCf
+        nonce <- usingState_ ctx $ genRandom 32
+        let resumptionMasterSecret = deriveSecret usedHash masterSecret "res master" hChCf
             life = 86400 -- 1 day in second: fixme hard coding
-        (ticket, add) <- createSessionTicket life resumptionSecret
-        let nst = createNewSessionTicket life add ticket
+            psk = hkdfExpandLabel usedHash resumptionMasterSecret "resumption" nonce hashSize
+        (ticket, add) <- createSessionTicket life psk
+        let nst = createNewSessionTicket life add nonce ticket
         sendPacket13 ctx $ Handshake13 [nst]
       where
         sendNST = (PSK_KE `elem` dhModes) || (PSK_DHE_KE `elem` dhModes)
         dhModes = case extensionLookup extensionID_PskKeyExchangeModes exts >>= extensionDecode MsgTClientHello of
           Just (PskKeyExchangeModes ms) -> ms
           Nothing                       -> []
-        createSessionTicket life resumptionSecret = do
+        createSessionTicket life psk = do
             Session (Just sessionId) <- newSession ctx
             serverName <- usingState_ ctx getClientSNI
             tinfo <- createTLS13TicketInfo life (Left ctx)
-            let sdata = SessionData chosenVersion (cipherID usedCipher) 0 serverName resumptionSecret (Just grp) (Just tinfo)
+            let sdata = SessionData chosenVersion (cipherID usedCipher) 0 serverName psk (Just grp) (Just tinfo)
                 mgr = sharedSessionManager $ serverShared sparams
             sessionEstablish mgr sessionId sdata
             return (sessionId, ageAdd tinfo)
           where
            grp = keyShareEntryGroup clientKeyShare
-        createNewSessionTicket life add ticket = NewSessionTicket13 life add ticket extensions
+        createNewSessionTicket life add nonce ticket = NewSessionTicket13 life add nonce ticket extensions
           where
             tedi = extensionEncode $ EarlyDataIndication (Just 2048) -- 2 KiB: fixme hard coding
             extensions = [ExtensionRaw extensionID_EarlyData tedi]

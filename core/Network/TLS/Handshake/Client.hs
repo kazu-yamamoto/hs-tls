@@ -108,7 +108,7 @@ handshakeClient' cparams ctx groups mcrand = do
   where ciphers      = supportedCiphers $ ctxSupported ctx
         compressions = supportedCompressions $ ctxSupported ctx
         highestVer = maximum $ supportedVersions $ ctxSupported ctx
-        tls13 = highestVer >= TLS13ID20
+        tls13 = highestVer >= TLS13ID21
         getExtensions = sequence [sniExtension
                                  ,secureReneg
                                  ,alpnExtension
@@ -177,7 +177,7 @@ handshakeClient' cparams ctx groups mcrand = do
           | otherwise = case clientWantSessionResume cparams of
               Nothing -> return Nothing
               Just (sid, sdata)
-                | sessionVersion sdata >= TLS13ID20 -> do
+                | sessionVersion sdata >= TLS13ID21 -> do
                       let usedHash = sessionHash sdata
                           siz = hashDigestSize usedHash
                           zero = B.replicate siz 0
@@ -203,7 +203,7 @@ handshakeClient' cparams ctx groups mcrand = do
         clientSession = case clientWantSessionResume cparams of
             Nothing -> Session Nothing
             Just (sid, sdata)
-              | sessionVersion sdata >= TLS13ID20 -> Session Nothing
+              | sessionVersion sdata >= TLS13ID21 -> Session Nothing
               | otherwise                         -> Session (Just sid)
 
         adjustExtentions exts ch
@@ -211,7 +211,7 @@ handshakeClient' cparams ctx groups mcrand = do
           | otherwise = case clientWantSessionResume cparams of
               Nothing -> return exts
               Just (_, sdata)
-                | sessionVersion sdata >= TLS13ID20 -> do
+                | sessionVersion sdata >= TLS13ID21 -> do
                       let usedHash = sessionHash sdata
                           siz = hashDigestSize usedHash
                           zero = B.replicate siz 0
@@ -246,7 +246,7 @@ handshakeClient' cparams ctx groups mcrand = do
 
         checkZeroRTT = case clientWantSessionResume cparams of
             Just (_, sdata)
-              | sessionVersion sdata >= TLS13ID20 -> case client0RTTData cparams of
+              | sessionVersion sdata >= TLS13ID21 -> case client0RTTData cparams of
                 Just earlyData -> Just (sessionCipher sdata, earlyData)
                 Nothing        -> Nothing
             _ -> Nothing
@@ -735,8 +735,8 @@ handshakeClient13' cparams ctx usedCipher usedHash exts = do
 
     setResumptionSecret masterSecret = do
         hChCf <- transcriptHash ctx
-        let resumptionSecret = deriveSecret usedHash masterSecret "res master" hChCf
-        usingHState ctx $ setTLS13MasterSecret $ Just resumptionSecret
+        let resumptionMasterSecret = deriveSecret usedHash masterSecret "res master" hChCf
+        usingHState ctx $ setTLS13MasterSecret $ Just resumptionMasterSecret
 
 update' :: Context -> Handshake -> IO ()
 update' ctx hs = usingHState ctx $ do

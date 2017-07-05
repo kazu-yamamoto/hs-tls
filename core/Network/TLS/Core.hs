@@ -29,7 +29,9 @@ module Network.TLS.Core
     , recvData'
     ) where
 
+import Network.TLS.Cipher
 import Network.TLS.Context
+import Network.TLS.Crypto
 import Network.TLS.Struct
 import Network.TLS.Struct13
 import Network.TLS.State (getSession)
@@ -41,12 +43,15 @@ import Network.TLS.Handshake.Common
 import Network.TLS.Handshake.Common13
 import Network.TLS.Handshake.State
 import Network.TLS.Handshake.State13
+import Network.TLS.KeySchedule
+import Network.TLS.Record.State
 import Network.TLS.Util (catchException)
 import qualified Network.TLS.State as S
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as L
 import qualified Control.Exception as E
+import Control.Concurrent.MVar (readMVar)
 
 import Control.Monad.State.Strict
 
@@ -142,7 +147,14 @@ recvData13 ctx = liftIO $ do
             finishedAction <- popPendingAction ctx
             finishedAction verifyData'
             recvData13 ctx
-        process (Handshake13 [NewSessionTicket13 life add ticket _exts]) = do
+        process (Handshake13 [NewSessionTicket13 life add nonce ticket _exts]) = do
+            Just resumptionMasterSecret <- usingHState ctx getTLS13MasterSecret
+            tx <- readMVar (ctxTxState ctx)
+            let Just usedCipher = stCipher tx
+                usedHash = cipherHash usedCipher
+                hashSize = hashDigestSize usedHash
+            let psk = hkdfExpandLabel usedHash resumptionMasterSecret "resumption" nonce hashSize
+            usingHState ctx $ setTLS13MasterSecret $ Just psk
             mgrp <- usingHState ctx getTLS13Group
             tinfo <- createTLS13TicketInfo life $ Right add
             Just sdata <- getSessionData ctx mgrp (Just tinfo)

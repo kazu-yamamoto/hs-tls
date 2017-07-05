@@ -50,9 +50,10 @@ encodeHandshake13' (CertVerify13 hs signature) = runPut $ do
     putSignatureHashAlgorithm hs
     putOpaque16 signature
 encodeHandshake13' (Finished13 dat) = runPut $ putBytes dat
-encodeHandshake13' (NewSessionTicket13 life ageadd ticket exts) = runPut $ do
+encodeHandshake13' (NewSessionTicket13 life ageadd nonce ticket exts) = runPut $ do
     putWord32 life
     putWord32 ageadd
+    putOpaque8 nonce
     putOpaque16 ticket
     putExtensions exts
 encodeHandshake13' EndOfEarlyData13 = ""
@@ -119,9 +120,10 @@ decodeCertVerify13 = do
 
 decodeNewSessionTicket13 :: Get Handshake13
 decodeNewSessionTicket13 = do
-    life <- getWord32
+    life   <- getWord32
     ageadd <- getWord32
+    nonce  <- getOpaque8
     ticket <- getOpaque16
-    len <- fromIntegral <$> getWord16
-    exts <- getExtensions len
-    return $ NewSessionTicket13 life ageadd ticket exts
+    len    <- fromIntegral <$> getWord16
+    exts   <- getExtensions len
+    return $ NewSessionTicket13 life ageadd nonce ticket exts

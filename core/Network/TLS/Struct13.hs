@@ -17,7 +17,7 @@ data CertificateEntry13 = CertificateEntry13 [ExtensionRaw]
 data Handshake13 =
       ClientHello13 !Version !ClientRandom ![CipherID] [ExtensionRaw]
     | ServerHello13 !Version !ServerRandom !CipherID [ExtensionRaw]
-    | NewSessionTicket13 Word32 Word32 ByteString [ExtensionRaw] -- fixme
+    | NewSessionTicket13 Word32 Word32 ByteString ByteString [ExtensionRaw] -- fixme
     | HelloRetryRequest13 !Version CipherID [ExtensionRaw]
     | EndOfEarlyData13
     | EncryptedExtensions13 [ExtensionRaw]
