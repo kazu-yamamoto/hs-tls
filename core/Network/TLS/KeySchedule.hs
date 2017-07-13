@@ -27,9 +27,9 @@ hkdfExtract _ _ _           = error "hkdfExtract: unsupported hash"
 
 deriveSecret :: Hash -> ByteString -> ByteString -> ByteString -> ByteString
 deriveSecret h secret label hashedMsgs =
-    hkdfExpandLabel h secret label hashedMsgs len
+    hkdfExpandLabel h secret label hashedMsgs outlen
   where
-    len = hashDigestSize h
+    outlen = hashDigestSize h
 
 ----------------------------------------------------------------
 
@@ -39,18 +39,16 @@ hkdfExpandLabel :: Hash
                 -> ByteString
                 -> Int
                 -> ByteString
-hkdfExpandLabel h secret label hashValue len = expand' h secret hkdfLabel len
+hkdfExpandLabel h secret label value outlen = expand' h secret hkdfLabel outlen
   where
     hkdfLabel :: ByteString
     hkdfLabel = runPut $ do
-        putWord16 $ fromIntegral len
+        putWord16 $ fromIntegral outlen
         let tlsLabel = "tls13 " `BS.append` label
-            tlsLabelLen = BS.length tlsLabel
-            hashLen = BS.length hashValue -- not equal to len
-        putWord8 $ fromIntegral tlsLabelLen
+        putWord8 $ fromIntegral $ BS.length tlsLabel
         putBytes $ tlsLabel
-        putWord8 $ fromIntegral hashLen
-        putBytes $ hashValue
+        putWord8 $ fromIntegral $ BS.length value
+        putBytes $ value
 
 expand' :: Hash -> ByteString -> ByteString -> Int -> ByteString
 expand' SHA1   secret label len = expand ((extractSkip secret) :: PRK H.SHA1)   label len
