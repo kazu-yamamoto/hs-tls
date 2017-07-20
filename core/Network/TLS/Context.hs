@@ -62,6 +62,9 @@ module Network.TLS.Context
     , getHState
     , getStateRNG
     , tls13orLater
+
+    -- * Key exporter
+    , exporter
     ) where
 
 import Network.TLS.Backend

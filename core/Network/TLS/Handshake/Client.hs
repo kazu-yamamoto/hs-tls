@@ -663,6 +663,8 @@ handshakeClient13' cparams ctx usedCipher usedHash exts = do
         let masterSecret = hkdfExtract usedHash (deriveSecret usedHash handshakeSecret "derived" (hash usedHash "")) zero
         let clientApplicationTrafficSecret0 = deriveSecret usedHash masterSecret "c ap traffic" hChSf
             serverApplicationTrafficSecret0 = deriveSecret usedHash masterSecret "s ap traffic" hChSf
+            exporterMasterSecret = deriveSecret usedHash masterSecret "exp master" hChSf
+        usingState_ ctx $ setExporterMasterSecret exporterMasterSecret
 {-
         putStrLn $ "hChSf: " ++ showBytesHex hChSf
         putStrLn $ "masterSecret: " ++ showBytesHex masterSecret

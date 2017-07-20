@@ -736,8 +736,10 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     hChEoed <- transcriptHash ctx
     let clientApplicationTrafficSecret0 = deriveSecret usedHash masterSecret "c ap traffic" hChSf
         serverApplicationTrafficSecret0 = deriveSecret usedHash masterSecret "s ap traffic" hChSf
+        exporterMasterSecret = deriveSecret usedHash masterSecret "exp master" hChSf
         verifyData = makeVerifyData usedHash clientHandshakeTrafficSecret hChEoed
         pendingTranscript = encodeHandshake13 $ Finished13 verifyData
+    usingState_ ctx $ setExporterMasterSecret exporterMasterSecret
     ----------------------------------------------------------------
 {-
     putStrLn $ "hChSf: " ++ showBytesHex hChSf
