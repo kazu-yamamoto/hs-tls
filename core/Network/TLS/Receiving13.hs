@@ -27,6 +27,7 @@ import Network.TLS.Util
 import Network.TLS.Imports
 
 processPacket13 :: Context -> Record13 -> IO (Either TLSError Packet13)
+processPacket13 _ (Record13 ContentType_ChangeCipherSpec _) = return $ Right ChangeCipherSpec13
 processPacket13 _ (Record13 ContentType_AppData fragment) = return $ Right $ AppData13 fragment
 processPacket13 _ (Record13 ContentType_Alert fragment) = return (Alert13 `fmapEither` decodeAlerts fragment)
 processPacket13 ctx (Record13 ContentType_Handshake fragment) = usingState ctx $ do

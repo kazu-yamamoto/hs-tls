@@ -62,6 +62,7 @@ module Network.TLS.Packet
     , putServerRandom32
     , putExtension
     , getExtensions
+    , putSession
     ) where
 
 import Network.TLS.Imports
@@ -188,7 +189,6 @@ decodeHandshake cp ty = runGetErr ("handshake[" ++ show ty ++ "]") $ case ty of
     HandshakeType_CertVerify      -> decodeCertVerify cp
     HandshakeType_ClientKeyXchg   -> decodeClientKeyXchg cp
     HandshakeType_Finished        -> decodeFinished
-    HandshakeType_HelloRetryRequest -> decodeHelloRetryRequest
 
 decodeDeprecatedHandshake :: ByteString -> Either TLSError Handshake
 decodeDeprecatedHandshake b = runGetErr "deprecatedhandshake" getDeprecated b
@@ -232,19 +232,14 @@ decodeServerHello :: Get Handshake
 decodeServerHello = do
     ver           <- getVersion
     random        <- getServerRandom32
-    if ver <= TLS12 then do
-        session       <- getSession
-        cipherid      <- getWord16
-        compressionid <- getWord8
-        r             <- remaining
-        exts <- if hasHelloExtensions ver && r > 0
-                then fromIntegral <$> getWord16 >>= getExtensions
-                else return []
-        return $ ServerHello ver random session cipherid compressionid exts
-      else do
-        cipherid      <- getWord16
-        exts <- fmap fromIntegral getWord16 >>= getExtensions
-        return $ ServerHello' ver random cipherid exts
+    session       <- getSession
+    cipherid      <- getWord16
+    compressionid <- getWord8
+    r             <- remaining
+    exts <- if hasHelloExtensions ver && r > 0
+            then fmap fromIntegral getWord16 >>= getExtensions
+            else return []
+    return $ ServerHello ver random session cipherid compressionid exts
 
 decodeServerHelloDone :: Get Handshake
 decodeServerHelloDone = return ServerHelloDone
@@ -344,13 +339,6 @@ decodeServerKeyXchg cp =
         Just cke -> ServerKeyXchg <$> decodeServerKeyXchgAlgorithmData (cParamsVersion cp) cke
         Nothing  -> ServerKeyXchg . SKX_Unparsed <$> (remaining >>= getBytes)
 
-decodeHelloRetryRequest :: Get Handshake
-decodeHelloRetryRequest = do
-    ver <- getVersion
-    cipherId <- getWord16
-    exts <- (fromIntegral <$> getWord16) >>= getExtensions
-    return $ HelloRetryRequest ver cipherId exts
-
 encodeHandshake :: Handshake -> ByteString
 encodeHandshake o =
     let content = runPut $ encodeHandshakeContent o in
@@ -426,16 +414,6 @@ encodeHandshakeContent (CertRequest certTypes sigAlgs certAuthorities) = do
 encodeHandshakeContent (CertVerify digitallySigned) = putDigitallySigned digitallySigned
 
 encodeHandshakeContent (Finished opaque) = putBytes opaque
-
-encodeHandshakeContent (ServerHello' ver random cipherId exts) = do
-    putVersion' ver
-    putServerRandom32 random
-    putWord16 cipherId
-    putExtensions exts -- fixme
-encodeHandshakeContent (HelloRetryRequest ver cipherId exts) = do
-    putVersion' ver
-    putWord16 cipherId
-    putExtensions exts -- fixme
 
 {- FIXME make sure it return error if not 32 available -}
 getRandom32 :: Get ByteString

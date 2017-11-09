@@ -341,21 +341,31 @@ instance Extension SignatureAlgorithms where
             len <- getWord16
             SignatureAlgorithms <$> getList (fromIntegral len) (getSignatureHashAlgorithm >>= \sh -> return (2, sh))
 
-data SupportedVersions = SupportedVersions [Version]
+data SupportedVersions =
+    SupportedVersionsClientHello [Version]
+  | SupportedVersionsServerHello Version
     deriving (Show,Eq)
 
 instance Extension SupportedVersions where
     extensionID _ = extensionID_SupportedVersions
-    extensionEncode (SupportedVersions vers) = runPut $ do
+    extensionEncode (SupportedVersionsClientHello vers) = runPut $ do
         putWord8 (fromIntegral (length vers * 2))
         mapM_ putVersion' vers
-    extensionDecode _ = runGetMaybe $ do
+    extensionEncode (SupportedVersionsServerHello ver) = runPut $
+        putVersion' ver
+    extensionDecode MsgTClientHello = runGetMaybe $ do
         len <- fromIntegral <$> getWord8
-        SupportedVersions . catMaybes <$> getList len getVer
+        SupportedVersionsClientHello . catMaybes <$> getList len getVer
       where
         getVer = do
             ver <- getVersion'
             return (2,ver)
+    extensionDecode MsgTServerHello = runGetMaybe $ do
+        mver <- getVersion'
+        case mver of
+          Just ver -> return $ SupportedVersionsServerHello ver
+          Nothing  -> fail "extensionDecode: SupportedVersionsServerHello"
+    extensionDecode _ = error "extensionDecode: SupportedVersionsServerHello"
 
 data KeyShareEntry = KeyShareEntry {
     keyShareEntryGroup :: Group

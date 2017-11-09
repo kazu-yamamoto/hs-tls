@@ -72,5 +72,5 @@ decryptData econtent tst = decryptOf (cstKey cst)
         decryptOf _ =
             throwError $ Error_Protocol ("decrypt state uninitialized", True, InternalError)
 
-        get3 s ls = maybe (throwError $ Error_Packet "record bad format") return $ partition3 s ls
+        get3 s ls = maybe (throwError $ Error_Packet "record bad format 1.3") return $ partition3 s ls
         get2 s (d1,d2) = get3 s (d1,d2,0) >>= \(r1,r2,_) -> return (r1,r2)

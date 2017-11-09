@@ -127,12 +127,13 @@ processClientFinished ctx fdata = do
 startHandshake :: Context -> Version -> ClientRandom -> IO ()
 startHandshake ctx ver crand = do
     mhst <- getHState ctx
+    hrr <- usingState_ ctx getTLS13HRR
     let mhst' = case mhst of
           -- Flesh negotiation
-          Nothing                -> Just $ newEmptyHandshake ver crand
+          Nothing       -> Just $ newEmptyHandshake ver crand
           Just oldhst
           -- TLS 1.3 hello retry: Handshake messages etc must be preserved.
-            | hstTLS13HRR oldhst -> Just oldhst
+            | hrr       -> Just oldhst
           -- TLS 1.2 renegotiation: state must be initialized again.
-            | otherwise          -> Just $ newEmptyHandshake ver crand
+            | otherwise -> Just $ newEmptyHandshake ver crand
     liftIO $ modifyMVar_ (ctxHandshake ctx) $ \_ -> return mhst'

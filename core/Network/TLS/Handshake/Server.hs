@@ -114,11 +114,11 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
         throwCore $ Error_Protocol ("fallback is not allowed", True, InappropriateFallback)
     -- choosing TLS version
     let clientVersions = case extensionLookup extensionID_SupportedVersions exts >>= extensionDecode MsgTClientHello of
-            Just (SupportedVersions vers) -> vers
-            _                             -> []
+            Just (SupportedVersionsClientHello vers) -> vers
+            _                                        -> []
         serverVersions = supportedVersions $ ctxSupported ctx
         mver
-          | (TLS13ID21 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
+          | (TLS13ID22 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
                 findHighestVersionFrom13 clientVersions serverVersions
           | otherwise = findHighestVersionFrom clientVersion serverVersions
 
@@ -151,7 +151,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
     if chosenVersion <= TLS12 then
         handshakeServerWithTLS12 sparams ctx chosenVersion allCreds exts ciphers serverName clientVersion compressions clientSession
       else
-        handshakeServerWithTLS13 sparams ctx chosenVersion allCreds exts ciphers serverName
+        handshakeServerWithTLS13 sparams ctx chosenVersion allCreds exts ciphers serverName clientSession
   where
         commonCompressions    = compressionIntersectID (supportedCompressions $ ctxSupported ctx) compressions
 handshakeServerWith _ _ _ = throwCore $ Error_Protocol ("unexpected handshake message received in handshakeServerWith", True, HandshakeFailure)
@@ -627,8 +627,9 @@ handshakeServerWithTLS13 :: ServerParams
                          -> [ExtensionRaw]
                          -> [CipherID]
                          -> Maybe String
+                         -> Session
                          -> IO ()
-handshakeServerWithTLS13 sparams ctx chosenVersion allCreds exts clientCiphers _serverName = do
+handshakeServerWithTLS13 sparams ctx chosenVersion allCreds exts clientCiphers _serverName clientSession = do
     -- Deciding cipher.
     -- The shared cipherlist can become empty after filtering for compatible
     -- creds, check now before calling onCipherChoosing, which does not handle
@@ -647,14 +648,14 @@ handshakeServerWithTLS13 sparams ctx chosenVersion allCreds exts clientCiphers _
     usingHState ctx getHandshakeMessages >>= mapM_ (putStrLn . showBytesHex)
 -}
     case findKeyShare keyShares serverGroups of
-      Nothing -> helloRetryRequest sparams ctx chosenVersion usedCipher exts serverGroups
+      Nothing -> helloRetryRequest sparams ctx chosenVersion usedCipher exts serverGroups clientSession
       Just keyShare -> do
         print $ keyShareEntryGroup keyShare
         -- Deciding signature algorithm
         let hashSigs = hashAndSignaturesInCommon ctx exts
             Just (cred, sigAlgo) = credentialsFindForSigning13 hashSigs allCreds
         let usedHash = cipherHash usedCipher
-        doHandshake13 sparams cred ctx chosenVersion usedCipher exts usedHash keyShare sigAlgo
+        doHandshake13 sparams cred ctx chosenVersion usedCipher exts usedHash keyShare sigAlgo clientSession
   where
     ciphersFilteredVersion = mapMaybe cipherIDtoCipher13 commonCipherIDs
     serverCiphers = supportedCiphers $ serverSupported sparams
@@ -668,8 +669,9 @@ handshakeServerWithTLS13 sparams ctx chosenVersion allCreds exts clientCiphers _
 doHandshake13 :: ServerParams -> Credential -> Context -> Version
               -> Cipher -> [ExtensionRaw]
               -> Hash -> KeyShareEntry -> HashAndSignatureAlgorithm
+              -> Session
               -> IO ()
-doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts usedHash clientKeyShare sigAlgo = do
+doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts usedHash clientKeyShare sigAlgo clientSession = do
     print chosenVersion
     print usedCipher
     print sigAlgo
@@ -725,7 +727,8 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     setTxState ctx usedHash usedCipher serverHandshakeTrafficSecret
     ----------------------------------------------------------------
     serverHandshake <- makeServerHandshake authenticated serverHandshakeTrafficSecret rtt0OK
-    sendBytes13 ctx $ B.concat (helo : serverHandshake)
+    Right ccs <- writePacket13 ctx ChangeCipherSpec13
+    sendBytes13 ctx $ B.concat (helo : ccs : serverHandshake)
     ----------------------------------------------------------------
     let masterSecret = hkdfExtract usedHash (deriveSecret usedHash handshakeSecret "derived" (hash usedHash "")) zero
     hChSf <- transcriptHash ctx
@@ -814,9 +817,11 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
 
     makeServerHello keyShare srand extensions = do
         let serverKeyShare = extensionEncode $ KeyShareServerHello keyShare
+            selectedVersion = extensionEncode $ SupportedVersionsServerHello chosenVersion
             extensions' = ExtensionRaw extensionID_KeyShare serverKeyShare
+                        : ExtensionRaw extensionID_SupportedVersions selectedVersion
                         : extensions
-        return $ ServerHello13 chosenVersion srand (cipherID usedCipher) extensions'
+        return $ ServerHello13 srand clientSession (cipherID usedCipher) extensions'
 
     makeServerHandshake False serverHandshakeTrafficSecret rtt0OK = do
         eext <- makeExtensions rtt0OK >>= writeHandshakePacket13 ctx
@@ -882,12 +887,12 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     hashSize = hashDigestSize usedHash
     zero = B.replicate hashSize 0
 
-helloRetryRequest :: MonadIO m => ServerParams -> Context -> Version -> Cipher -> [ExtensionRaw] -> [Group] -> m ()
-helloRetryRequest sparams ctx chosenVersion usedCipher exts serverGroups = liftIO $ do
-    twice <- usingHState ctx getTLS13HRR
+helloRetryRequest :: MonadIO m => ServerParams -> Context -> Version -> Cipher -> [ExtensionRaw] -> [Group] -> Session -> m ()
+helloRetryRequest sparams ctx chosenVersion usedCipher exts serverGroups clientSession = liftIO $ do
+    twice <- usingState_ ctx getTLS13HRR
     when twice $
         throwCore $ Error_Protocol ("Hello retry not allowed again", True, HandshakeFailure)
-    usingHState ctx $ setTLS13HRR True
+    usingState_ ctx $ setTLS13HRR True
     usingHState ctx $ setHelloParameters13 usedCipher True
     let clientGroups = case extensionLookup extensionID_NegotiatedGroups exts >>= extensionDecode MsgTClientHello of
           Just (NegotiatedGroups gs) -> gs
@@ -896,8 +901,11 @@ helloRetryRequest sparams ctx chosenVersion usedCipher exts serverGroups = liftI
     case possibleGroups of
       [] -> throwCore $ Error_Protocol ("key exchange not implemented", True, HandshakeFailure)
       g:_ -> do
-          let ext = ExtensionRaw extensionID_KeyShare $ extensionEncode $ KeyShareHRR g
-              hrr = HelloRetryRequest13 chosenVersion (cipherID usedCipher) [ext]
+          let serverKeyShare = extensionEncode $ KeyShareHRR g
+              selectedVersion = extensionEncode $ SupportedVersionsServerHello chosenVersion
+              extensions = [ExtensionRaw extensionID_KeyShare serverKeyShare
+                           ,ExtensionRaw extensionID_SupportedVersions selectedVersion]
+              hrr = ServerHello13 (ServerRandom hrrRandom) clientSession (cipherID usedCipher) extensions
           putStrLn $ "Sending hello retry request for " ++ show g
           sendPacket13 ctx $ Handshake13 [hrr]
           handshakeServer sparams ctx

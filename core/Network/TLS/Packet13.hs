@@ -28,14 +28,12 @@ putExtensions :: [ExtensionRaw] -> Put
 putExtensions es = putOpaque16 (runPut $ mapM_ putExtension es)
 
 encodeHandshake13' :: Handshake13 -> ByteString
-encodeHandshake13' (HelloRetryRequest13 ver cipherId exts) = runPut $ do
-    putVersion' ver
-    putWord16 cipherId
-    putExtensions exts
-encodeHandshake13' (ServerHello13 ver random cipherId exts) = runPut $ do
-    putVersion' ver
+encodeHandshake13' (ServerHello13 random session cipherId exts) = runPut $ do
+    putVersion' TLS12
     putServerRandom32 random
+    putSession session
     putWord16 cipherId
+    putWord8 0
     putExtensions exts
 encodeHandshake13' (EncryptedExtensions13 exts) = runPut $ putExtensions exts
 encodeHandshake13' (Certificate13 reqctx cc ess) = runPut $ do
@@ -127,3 +125,11 @@ decodeNewSessionTicket13 = do
     len    <- fromIntegral <$> getWord16
     exts   <- getExtensions len
     return $ NewSessionTicket13 life ageadd nonce ticket exts
+
+hrrRandom :: ByteString
+hrrRandom = B.pack [
+    0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11
+  , 0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91
+  , 0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E
+  , 0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C
+  ]

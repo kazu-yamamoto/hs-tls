@@ -48,6 +48,12 @@ module Network.TLS.State
     , isClientContext
     , setExporterMasterSecret
     , getExporterMasterSecret
+    , setTLS13KeyShare
+    , getTLS13KeyShare
+    , setTLS13PreSharedKey
+    , getTLS13PreSharedKey
+    , setTLS13HRR
+    , getTLS13HRR
     -- * random
     , genRandom
     , withRNG
@@ -86,6 +92,9 @@ data TLSState = TLSState
     , stRandomGen           :: StateRNG
     , stVersion             :: Maybe Version
     , stClientContext       :: Role
+    , stTLS13KeyShare       :: Maybe KeyShare
+    , stTLS13PreSharedKey   :: Maybe PreSharedKey
+    , stTLS13HRR            :: !Bool
     , stExporterMasterSecret :: Maybe ByteString -- TLS 1.3
     }
 
@@ -121,6 +130,9 @@ newTLSState rng clientContext = TLSState
     , stRandomGen           = rng
     , stVersion             = Nothing
     , stClientContext       = clientContext
+    , stTLS13KeyShare       = Nothing
+    , stTLS13PreSharedKey   = Nothing
+    , stTLS13HRR            = False
     , stExporterMasterSecret = Nothing
     }
 
@@ -142,7 +154,6 @@ finishHandshakeTypeMaterial HandshakeType_ServerKeyXchg   = True
 finishHandshakeTypeMaterial HandshakeType_CertRequest     = True
 finishHandshakeTypeMaterial HandshakeType_CertVerify      = True
 finishHandshakeTypeMaterial HandshakeType_Finished        = True
-finishHandshakeTypeMaterial HandshakeType_HelloRetryRequest = True -- fixme
 
 finishHandshakeMaterial :: Handshake -> Bool
 finishHandshakeMaterial = finishHandshakeTypeMaterial . typeOfHandshake
@@ -158,7 +169,6 @@ certVerifyHandshakeTypeMaterial HandshakeType_ServerKeyXchg   = True
 certVerifyHandshakeTypeMaterial HandshakeType_CertRequest     = True
 certVerifyHandshakeTypeMaterial HandshakeType_CertVerify      = False
 certVerifyHandshakeTypeMaterial HandshakeType_Finished        = False
-certVerifyHandshakeTypeMaterial HandshakeType_HelloRetryRequest = True -- fixme
 
 certVerifyHandshakeMaterial :: Handshake -> Bool
 certVerifyHandshakeMaterial = certVerifyHandshakeTypeMaterial . typeOfHandshake
@@ -251,3 +261,21 @@ setExporterMasterSecret key = modify (\st -> st { stExporterMasterSecret = Just 
 
 getExporterMasterSecret :: TLSSt (Maybe ByteString)
 getExporterMasterSecret = gets stExporterMasterSecret
+
+setTLS13KeyShare :: Maybe KeyShare -> TLSSt ()
+setTLS13KeyShare mks = modify (\st -> st { stTLS13KeyShare = mks })
+
+getTLS13KeyShare :: TLSSt (Maybe KeyShare)
+getTLS13KeyShare = gets stTLS13KeyShare
+
+setTLS13PreSharedKey :: Maybe PreSharedKey -> TLSSt ()
+setTLS13PreSharedKey mpsk = modify (\st -> st { stTLS13PreSharedKey = mpsk })
+
+getTLS13PreSharedKey :: TLSSt (Maybe PreSharedKey)
+getTLS13PreSharedKey = gets stTLS13PreSharedKey
+
+setTLS13HRR :: Bool -> TLSSt ()
+setTLS13HRR b = modify (\st -> st { stTLS13HRR = b })
+
+getTLS13HRR :: TLSSt Bool
+getTLS13HRR = gets stTLS13HRR

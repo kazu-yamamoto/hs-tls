@@ -8,6 +8,7 @@ import Network.TLS.Imports
 data Packet13 =
       Handshake13 [Handshake13]
     | Alert13 [(AlertLevel, AlertDescription)]
+    | ChangeCipherSpec13
     | AppData13 ByteString
     deriving (Show,Eq)
 
@@ -15,10 +16,9 @@ data CertificateEntry13 = CertificateEntry13 [ExtensionRaw]
     deriving (Show,Eq)
 
 data Handshake13 =
-      ClientHello13 !Version !ClientRandom ![CipherID] [ExtensionRaw]
-    | ServerHello13 !Version !ServerRandom !CipherID [ExtensionRaw]
+      ClientHello13 !Version !ClientRandom !Session ![CipherID] [ExtensionRaw]
+    | ServerHello13 !ServerRandom !Session !CipherID [ExtensionRaw]
     | NewSessionTicket13 Word32 Word32 ByteString ByteString [ExtensionRaw] -- fixme
-    | HelloRetryRequest13 !Version CipherID [ExtensionRaw]
     | EndOfEarlyData13
     | EncryptedExtensions13 [ExtensionRaw]
     | CertRequest13 -- fixme
@@ -33,7 +33,6 @@ data HandshakeType13 =
     | HandshakeType_ServerHello13
     | HandshakeType_EndOfEarlyData13
     | HandshakeType_NewSessionTicket13
-    | HandshakeType_HelloRetryRequest13
     | HandshakeType_EncryptedExtensions13
     | HandshakeType_CertRequest13
     | HandshakeType_Certificate13
@@ -47,7 +46,6 @@ typeOfHandshake13 (ClientHello13 {})         = HandshakeType_ClientHello13
 typeOfHandshake13 (ServerHello13 {})         = HandshakeType_ServerHello13
 typeOfHandshake13 (EndOfEarlyData13 {})      = HandshakeType_EndOfEarlyData13
 typeOfHandshake13 (NewSessionTicket13 {})    = HandshakeType_NewSessionTicket13
-typeOfHandshake13 (HelloRetryRequest13 {})   = HandshakeType_HelloRetryRequest13
 typeOfHandshake13 (EncryptedExtensions13 {}) = HandshakeType_EncryptedExtensions13
 typeOfHandshake13 (CertRequest13 {})         = HandshakeType_CertRequest13
 typeOfHandshake13 (Certificate13 {})         = HandshakeType_Certificate13
@@ -60,7 +58,6 @@ instance TypeValuable HandshakeType13 where
   valOfType HandshakeType_ServerHello13         = 2
   valOfType HandshakeType_NewSessionTicket13    = 4
   valOfType HandshakeType_EndOfEarlyData13      = 5
-  valOfType HandshakeType_HelloRetryRequest13   = 6
   valOfType HandshakeType_EncryptedExtensions13 = 8
   valOfType HandshakeType_CertRequest13         = 13
   valOfType HandshakeType_Certificate13         = 11
@@ -72,7 +69,6 @@ instance TypeValuable HandshakeType13 where
   valToType 2  = Just HandshakeType_ServerHello13
   valToType 4  = Just HandshakeType_NewSessionTicket13
   valToType 5  = Just HandshakeType_EndOfEarlyData13
-  valToType 6  = Just HandshakeType_HelloRetryRequest13
   valToType 8  = Just HandshakeType_EncryptedExtensions13
   valToType 13 = Just HandshakeType_CertRequest13
   valToType 11 = Just HandshakeType_Certificate13
@@ -82,29 +78,34 @@ instance TypeValuable HandshakeType13 where
   valToType _  = Nothing
 
 data ContentType =
-      ContentType_Alert
+      ContentType_ChangeCipherSpec
+    | ContentType_Alert
     | ContentType_Handshake
     | ContentType_AppData
     deriving (Eq, Show)
 
 
 instance TypeValuable ContentType where
+    valOfType ContentType_ChangeCipherSpec    = 20
     valOfType ContentType_Alert               = 21
     valOfType ContentType_Handshake           = 22
     valOfType ContentType_AppData             = 23
 
+    valToType 20 = Just ContentType_ChangeCipherSpec
     valToType 21 = Just ContentType_Alert
     valToType 22 = Just ContentType_Handshake
     valToType 23 = Just ContentType_AppData
     valToType _  = Nothing
 
 contentType :: Packet13 -> ContentType
-contentType (Handshake13 _)  = ContentType_Handshake
-contentType (Alert13 _)      = ContentType_Alert
-contentType (AppData13 _)    = ContentType_AppData
+contentType ChangeCipherSpec13 = ContentType_ChangeCipherSpec
+contentType (Handshake13 _)    = ContentType_Handshake
+contentType (Alert13 _)        = ContentType_Alert
+contentType (AppData13 _)      = ContentType_AppData
 
 protoToContent :: ProtocolType -> ContentType
-protoToContent ProtocolType_Alert     = ContentType_Alert
-protoToContent ProtocolType_Handshake = ContentType_Handshake
-protoToContent ProtocolType_AppData   = ContentType_AppData
-protoToContent _                      = error "protoToContent"
+protoToContent ProtocolType_ChangeCipherSpec = ContentType_ChangeCipherSpec
+protoToContent ProtocolType_Alert            = ContentType_Alert
+protoToContent ProtocolType_Handshake        = ContentType_Handshake
+protoToContent ProtocolType_AppData          = ContentType_AppData
+protoToContent _                             = error "protoToContent"

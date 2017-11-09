@@ -39,7 +39,7 @@ hkdfExpandLabel :: Hash
                 -> ByteString
                 -> Int
                 -> ByteString
-hkdfExpandLabel h secret label value outlen = expand' h secret hkdfLabel outlen
+hkdfExpandLabel h secret label ctx outlen = expand' h secret hkdfLabel outlen
   where
     hkdfLabel :: ByteString
     hkdfLabel = runPut $ do
@@ -47,8 +47,8 @@ hkdfExpandLabel h secret label value outlen = expand' h secret hkdfLabel outlen
         let tlsLabel = "tls13 " `BS.append` label
         putWord8 $ fromIntegral $ BS.length tlsLabel
         putBytes $ tlsLabel
-        putWord8 $ fromIntegral $ BS.length value
-        putBytes $ value
+        putWord8 $ fromIntegral $ BS.length ctx
+        putBytes $ ctx
 
 expand' :: Hash -> ByteString -> ByteString -> Int -> ByteString
 expand' SHA1   secret label len = expand ((extractSkip secret) :: PRK H.SHA1)   label len

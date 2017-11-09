@@ -53,8 +53,6 @@ module Network.TLS.Handshake.State
     , setServerHelloParameters
     , setTLS13Group
     , getTLS13Group
-    , setTLS13HRR
-    , getTLS13HRR
     , setTLS13RTT0Status
     , getTLS13RTT0Status
     , setTLS13HandshakeMsgs
@@ -101,7 +99,6 @@ data HandshakeState = HandshakeState
     , hstPendingCipher       :: Maybe Cipher
     , hstPendingCompression  :: Compression
     , hstTLS13Group          :: Maybe Group
-    , hstTLS13HRR            :: !Bool
     , hstTLS13RTT0Status     :: !RTT0Status
     , hstTLS13HandshakeMsgs  :: [Handshake13]
     } deriving (Show)
@@ -143,7 +140,6 @@ newEmptyHandshake ver crand = HandshakeState
     , hstPendingCipher       = Nothing
     , hstPendingCompression  = nullCompression
     , hstTLS13Group          = Nothing
-    , hstTLS13HRR            = False
     , hstTLS13RTT0Status     = RTT0None
     , hstTLS13HandshakeMsgs  = []
     }
@@ -194,12 +190,6 @@ setTLS13Group g = modify (\hst -> hst { hstTLS13Group = Just g })
 
 getTLS13Group :: HandshakeM (Maybe Group)
 getTLS13Group = gets hstTLS13Group
-
-setTLS13HRR :: Bool -> HandshakeM ()
-setTLS13HRR b = modify (\hst -> hst { hstTLS13HRR = b })
-
-getTLS13HRR :: HandshakeM Bool
-getTLS13HRR = gets hstTLS13HRR
 
 data RTT0Status = RTT0None
                 | RTT0Sent

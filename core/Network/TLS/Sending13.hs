@@ -28,16 +28,17 @@ import Network.TLS.Imports
 
 makeRecord :: Packet13 -> RecordM Record13
 makeRecord pkt = return $ Record13 (contentType pkt) $ writePacketContent pkt
-  where writePacketContent (Handshake13 hss) = encodeHandshakes13 hss
-        writePacketContent (Alert13 a)       = encodeAlerts a
-        writePacketContent (AppData13 x)     = x
+  where writePacketContent (Handshake13 hss)  = encodeHandshakes13 hss
+        writePacketContent (Alert13 a)        = encodeAlerts a
+        writePacketContent (AppData13 x)      = x
+        writePacketContent ChangeCipherSpec13 = encodeChangeCipherSpec
 
 encodeRecord :: Record13 -> RecordM ByteString
 encodeRecord (Record13 ct bytes) = return ebytes
   where
     ebytes = runPut $ do
         putWord8 $ fromIntegral $ valOfType ct
-        putWord16 0x0301
+        putWord16 0x0303 -- TLS12
         putWord16 $ fromIntegral $ B.length bytes
         putBytes bytes
 

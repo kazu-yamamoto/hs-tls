@@ -248,7 +248,6 @@ data HandshakeType =
     | HandshakeType_CertVerify
     | HandshakeType_ClientKeyXchg
     | HandshakeType_Finished
-    | HandshakeType_HelloRetryRequest
     deriving (Show,Eq)
 
 newtype BigNum = BigNum ByteString
@@ -321,8 +320,6 @@ data Handshake =
     | CertRequest [CertificateType] (Maybe [HashAndSignatureAlgorithm]) [DistinguishedName]
     | CertVerify DigitallySigned
     | Finished FinishedData
-    | ServerHello' !Version !ServerRandom !CipherID [ExtensionRaw] -- TLS 1.3
-    | HelloRetryRequest !Version !CipherID ![ExtensionRaw] -- TLS 1.3
     deriving (Show,Eq)
 
 packetType :: Packet -> ProtocolType
@@ -342,8 +339,6 @@ typeOfHandshake ServerKeyXchg{}           = HandshakeType_ServerKeyXchg
 typeOfHandshake CertRequest{}             = HandshakeType_CertRequest
 typeOfHandshake CertVerify{}              = HandshakeType_CertVerify
 typeOfHandshake Finished{}                = HandshakeType_Finished
-typeOfHandshake ServerHello'{}            = HandshakeType_ServerHello
-typeOfHandshake HelloRetryRequest{}       = HandshakeType_HelloRetryRequest
 
 numericalVer :: Version -> (Word8, Word8)
 numericalVer SSL2  = (2, 0)
@@ -351,7 +346,7 @@ numericalVer SSL3  = (3, 0)
 numericalVer TLS10 = (3, 1)
 numericalVer TLS11 = (3, 2)
 numericalVer TLS12 = (3, 3)
-numericalVer TLS13ID21 = (0x7f, 0x15)
+numericalVer TLS13ID22 = (0x7f, 0x16)
 numericalVer TLS13 = (3, 4)
 
 verOfNum :: (Word8, Word8) -> Maybe Version
@@ -361,7 +356,7 @@ verOfNum (3, 1) = Just TLS10
 verOfNum (3, 2) = Just TLS11
 verOfNum (3, 3) = Just TLS12
 verOfNum (3, 4) = Just TLS13
-verOfNum (0x7f, 0x15) = Just TLS13ID21
+verOfNum (0x7f, 0x16) = Just TLS13ID22
 verOfNum _      = Nothing
 
 class TypeValuable a where
@@ -412,7 +407,6 @@ instance TypeValuable HandshakeType where
     valOfType HandshakeType_HelloRequest      = 0
     valOfType HandshakeType_ClientHello       = 1
     valOfType HandshakeType_ServerHello       = 2
-    valOfType HandshakeType_HelloRetryRequest = 6
     valOfType HandshakeType_Certificate       = 11
     valOfType HandshakeType_ServerKeyXchg     = 12
     valOfType HandshakeType_CertRequest       = 13
@@ -424,7 +418,6 @@ instance TypeValuable HandshakeType where
     valToType 0  = Just HandshakeType_HelloRequest
     valToType 1  = Just HandshakeType_ClientHello
     valToType 2  = Just HandshakeType_ServerHello
-    valToType 6  = Just HandshakeType_HelloRetryRequest
     valToType 11 = Just HandshakeType_Certificate
     valToType 12 = Just HandshakeType_ServerKeyXchg
     valToType 13 = Just HandshakeType_CertRequest

@@ -29,6 +29,7 @@ import qualified Data.ByteString as B
 import qualified Data.ByteArray as B (convert)
 
 engageRecord :: Record13 -> RecordM Record13
+engageRecord record@(Record13 ContentType_ChangeCipherSpec _) = return record
 engageRecord record@(Record13 ct bytes) = do
     st <- get
     case stCipher st of
