@@ -792,7 +792,14 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
                       | tripTime >= age = tripTime - age
                       | otherwise       = age - tripTime
                 putStrLn $ "Ticket: lifetime = " ++ show (lifetime tinfo * 1000) ++ ", age = " ++ show age ++ ", trip time = " ++ show tripTime
-                if isAgeValid age tinfo &&
+                msni <- usingState_ ctx getClientSNI
+                let isSameSNI = sessionClientSNI sdata == msni
+                    isSameKDF = case cipherIDtoCipher13 (sessionCipher sdata) of
+                      Nothing -> False
+                      Just c  -> cipherHash c == cipherHash usedCipher
+                if isSameKDF &&
+                   isSameSNI &&
+                   isAgeValid age tinfo &&
                    -- fixme: 2000 milliseconds for RTT + delta
                    gap < 2000 then do
                     let psk = sessionSecret sdata
