@@ -40,6 +40,7 @@ data SessionData = SessionData
     , sessionSecret      :: ByteString
     , sessionGroup       :: Maybe Group
     , sessionTicketInfo  :: Maybe TLS13TicketInfo
+    , sessionALPN        :: Maybe ByteString
     } deriving (Show,Eq)
 
 data TLS13TicketInfo = TLS13TicketInfo

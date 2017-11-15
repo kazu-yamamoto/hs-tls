@@ -28,7 +28,7 @@ import Network.TLS.Util (catchException, fromJust)
 import Network.TLS.IO
 import Network.TLS.Sending13
 import Network.TLS.Types
-import Network.TLS.State hiding (getNegotiatedProtocol)
+import Network.TLS.State
 import Network.TLS.Handshake.State
 import Network.TLS.Handshake.Process
 import Network.TLS.Handshake.Key
@@ -680,7 +680,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     newSession ctx >>= \ss -> usingState_ ctx (setSession ss False)
     usingHState ctx $ setTLS13Group $ keyShareEntryGroup clientKeyShare
     srand <- setServerParameter
-    (psk, binderInfo) <- choosePSK
+    (psk, binderInfo, is0RTTvalid) <- choosePSK
     hCh <- transcriptHash ctx
     let earlySecret = hkdfExtract usedHash zero psk
         clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "c e traffic" hCh
@@ -691,7 +691,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
 -}
     extensions <- checkBinder earlySecret binderInfo
     let authenticated = isJust binderInfo
-        rtt0OK = authenticated && rtt0 && rtt0accept
+        rtt0OK = authenticated && rtt0 && rtt0accept && is0RTTvalid
     ----------------------------------------------------------------
     if rtt0 then
          if rtt0OK then do
@@ -793,21 +793,25 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
                       | otherwise       = age - tripTime
                 putStrLn $ "Ticket: lifetime = " ++ show (lifetime tinfo * 1000) ++ ", age = " ++ show age ++ ", trip time = " ++ show tripTime
                 msni <- usingState_ ctx getClientSNI
+                malpn <- usingState_ ctx getNegotiatedProtocol
                 let isSameSNI = sessionClientSNI sdata == msni
-                    isSameKDF = case cipherIDtoCipher13 (sessionCipher sdata) of
-                      Nothing -> False
-                      Just c  -> cipherHash c == cipherHash usedCipher
+                    (isSameCipher,isSameKDF) = case cipherIDtoCipher13 (sessionCipher sdata) of
+                      Nothing -> (False,False)
+                      Just c  -> (c == usedCipher,cipherHash c == cipherHash usedCipher)
+                    isSameVersion = chosenVersion == sessionVersion sdata
+                    isSameALPN = sessionALPN sdata == malpn
+                    is0RTTvalid = isSameVersion && isSameCipher && isSameALPN
                 if isSameKDF &&
                    isSameSNI &&
                    isAgeValid age tinfo &&
                    -- fixme: 2000 milliseconds for RTT + delta
                    gap < 2000 then do
                     let psk = sessionSecret sdata
-                    return (psk, Just (bnd,0::Int,len))
+                    return (psk, Just (bnd,0::Int,len),is0RTTvalid)
                   else
                     throwCore $ Error_Protocol ("PSK validation failed", True, HandshakeFailure)
-            _      -> return (zero, Nothing)
-      _ -> return (zero, Nothing)
+            _      -> return (zero, Nothing, False)
+      _ -> return (zero, Nothing, False)
 
     rtt0accept = serverAccept0RTT sparams
     rtt0 = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTClientHello of
@@ -879,8 +883,9 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
         createSessionTicket life psk = do
             Session (Just sessionId) <- newSession ctx
             serverName <- usingState_ ctx getClientSNI
+            alpn <- usingState_ ctx getNegotiatedProtocol
             tinfo <- createTLS13TicketInfo life (Left ctx)
-            let sdata = SessionData chosenVersion (cipherID usedCipher) 0 serverName psk (Just grp) (Just tinfo)
+            let sdata = SessionData chosenVersion (cipherID usedCipher) 0 serverName psk (Just grp) (Just tinfo) alpn
                 mgr = sharedSessionManager $ serverShared sparams
             sessionEstablish mgr sessionId sdata
             return (sessionId, ageAdd tinfo)

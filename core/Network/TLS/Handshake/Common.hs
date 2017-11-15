@@ -25,7 +25,7 @@ import Network.TLS.Context.Internal
 import Network.TLS.Session
 import Network.TLS.Struct
 import Network.TLS.IO
-import Network.TLS.State hiding (getNegotiatedProtocol)
+import Network.TLS.State
 import Network.TLS.Handshake.Process
 import Network.TLS.Handshake.State
 import Network.TLS.Record.State
@@ -126,6 +126,7 @@ getSessionData :: Context -> Maybe Group -> Maybe TLS13TicketInfo -> IO (Maybe S
 getSessionData ctx mgroup mlife = do
     ver <- usingState_ ctx getVersion
     sni <- usingState_ ctx getClientSNI
+    alpn <- usingState_ ctx getNegotiatedProtocol
     mms <- usingHState ctx (gets hstMasterSecret)
     tx  <- liftIO $ readMVar (ctxTxState ctx)
     case mms of
@@ -138,6 +139,7 @@ getSessionData ctx mgroup mlife = do
                         , sessionSecret     = ms
                         , sessionGroup      = mgroup
                         , sessionTicketInfo = mlife
+                        , sessionALPN       = alpn
                         }
 
 extensionLookup :: ExtensionID -> [ExtensionRaw] -> Maybe ByteString
