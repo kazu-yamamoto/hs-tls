@@ -370,7 +370,7 @@ instance Extension SupportedVersions where
 data KeyShareEntry = KeyShareEntry {
     keyShareEntryGroup :: Group
   , keySHareEntryKeyExchange:: ByteString
-  }deriving (Show,Eq)
+  } deriving (Show,Eq)
 
 getKeyShareEntry :: Get (Int, Maybe KeyShareEntry)
 getKeyShareEntry = do

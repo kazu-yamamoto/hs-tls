@@ -26,7 +26,7 @@ import Network.TLS.Extension
 import Network.TLS.IO
 import Network.TLS.Sending13
 import Network.TLS.Imports
-import Network.TLS.State hiding (getNegotiatedProtocol)
+import Network.TLS.State
 import Network.TLS.Measurement
 import Network.TLS.Util (bytesEq, catchException)
 import Network.TLS.Types
