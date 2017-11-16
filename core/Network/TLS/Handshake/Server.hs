@@ -809,6 +809,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
                     let psk = sessionSecret sdata
                     return (psk, Just (bnd,0::Int,len),is0RTTvalid)
                   else
+                    -- xxx: fixme: fall back to full handshake
                     throwCore $ Error_Protocol ("PSK validation failed", True, HandshakeFailure)
             _      -> return (zero, Nothing, False)
       _ -> return (zero, Nothing, False)
