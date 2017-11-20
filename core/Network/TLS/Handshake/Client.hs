@@ -480,7 +480,10 @@ onServerHello ctx cparams sentExts (ServerHello rver serverRan serverSession cip
 
     -- intersect sent extensions in client and the received extensions from server.
     -- if server returns extensions that we didn't request, fail.
-    unless (null $ filter (not . flip elem sentExts . (\(ExtensionRaw i _) -> i)) exts) $
+    let checkExt (ExtensionRaw i _)
+          | i == extensionID_Cookie = False -- for HRR
+          | otherwise               = notElem i sentExts
+    unless (null $ filter checkExt exts) $
         throwCore $ Error_Protocol ("spurious extensions received", True, UnsupportedExtension)
 
     let resumingSession =
