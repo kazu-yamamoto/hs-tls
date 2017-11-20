@@ -119,6 +119,7 @@ handshakeClient' cparams ctx groups mcrand = do
                                  ,keyshareExtension
                                  ,pskExchangeModeExtension
                                  ,preSharedKeyExtension
+                                 ,cookieExtension
                                  ]
 
         toExtensionRaw :: Extension e => e -> ExtensionRaw
@@ -196,6 +197,12 @@ handshakeClient' cparams ctx groups mcrand = do
         earlyDataExtension = case checkZeroRTT of
             Nothing -> return $ Nothing
             _       -> return $ Just $ toExtensionRaw (EarlyDataIndication Nothing)
+
+        cookieExtension = do
+            mcookie <- usingState_ ctx getTLS13Cookie
+            case mcookie of
+              Nothing     -> return Nothing
+              Just cookie -> return $ Just $ toExtensionRaw cookie
 
         clientSession = case clientWantSessionResume cparams of
             Nothing -> Session Nothing
@@ -493,6 +500,9 @@ onServerHello ctx cparams sentExts (ServerHello rver serverRan serverSession cip
         isHRR = serverRan == ServerRandom hrrRandom
     usingState_ ctx $ do
         setTLS13HRR isHRR
+        case extensionLookup extensionID_Cookie exts >>= extensionDecode MsgTServerHello of
+          Just cookie -> setTLS13Cookie cookie
+          _           -> return ()
         setSession serverSession (isJust resumingSession)
         setVersion rver -- must be before processing supportedVersions ext
         mapM_ processServerExtension exts

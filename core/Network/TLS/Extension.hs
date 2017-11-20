@@ -51,6 +51,7 @@ module Network.TLS.Extension
     , PskIdentity(..)
     , PreSharedKey(..)
     , EarlyDataIndication(..)
+    , Cookie(..)
     ) where
 
 import qualified Data.ByteString as B
@@ -490,3 +491,10 @@ instance Extension EarlyDataIndication where
         w32 <- getWord32
         return (EarlyDataIndication (Just w32))
     extensionDecode _                       = error "extensionDecode: EarlyDataIndication"
+
+newtype Cookie = Cookie ByteString deriving (Eq, Show)
+
+instance Extension Cookie where
+    extensionID _ = extensionID_Cookie
+    extensionEncode (Cookie opaque) = runPut $ putOpaque16 opaque
+    extensionDecode _ = runGetMaybe (Cookie <$> getOpaque16)

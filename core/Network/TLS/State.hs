@@ -54,6 +54,8 @@ module Network.TLS.State
     , getTLS13PreSharedKey
     , setTLS13HRR
     , getTLS13HRR
+    , setTLS13Cookie
+    , getTLS13Cookie
     -- * random
     , genRandom
     , withRNG
@@ -95,6 +97,7 @@ data TLSState = TLSState
     , stTLS13KeyShare       :: Maybe KeyShare
     , stTLS13PreSharedKey   :: Maybe PreSharedKey
     , stTLS13HRR            :: !Bool
+    , stTLS13Cookie         :: Maybe Cookie
     , stExporterMasterSecret :: Maybe ByteString -- TLS 1.3
     }
 
@@ -133,6 +136,7 @@ newTLSState rng clientContext = TLSState
     , stTLS13KeyShare       = Nothing
     , stTLS13PreSharedKey   = Nothing
     , stTLS13HRR            = False
+    , stTLS13Cookie         = Nothing
     , stExporterMasterSecret = Nothing
     }
 
@@ -279,3 +283,9 @@ setTLS13HRR b = modify (\st -> st { stTLS13HRR = b })
 
 getTLS13HRR :: TLSSt Bool
 getTLS13HRR = gets stTLS13HRR
+
+setTLS13Cookie :: Cookie -> TLSSt ()
+setTLS13Cookie cookie = modify (\st -> st { stTLS13Cookie = Just cookie })
+
+getTLS13Cookie :: TLSSt (Maybe Cookie)
+getTLS13Cookie = gets stTLS13Cookie
