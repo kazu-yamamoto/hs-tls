@@ -248,7 +248,7 @@ instance Extension SecureRenegotiation where
           MsgTServerHello -> let (cvd, svd) = B.splitAt (B.length opaque `div` 2) opaque
                              in return $ SecureRenegotiation cvd (Just svd)
           MsgTClientHello -> return $ SecureRenegotiation opaque Nothing
-          _               -> error "decoding SecureRenegotiation for HRR"
+          _               -> fail "decoding SecureRenegotiation for HRR"
 
 -- | Application Layer Protocol Negotiation (ALPN)
 newtype ApplicationLayerProtocolNegotiation = ApplicationLayerProtocolNegotiation [ByteString] deriving (Show,Eq)
@@ -366,7 +366,7 @@ instance Extension SupportedVersions where
         case mver of
           Just ver -> return $ SupportedVersionsServerHello ver
           Nothing  -> fail "extensionDecode: SupportedVersionsServerHello"
-    extensionDecode _ = error "extensionDecode: SupportedVersionsServerHello"
+    extensionDecode _ = fail "extensionDecode: SupportedVersionsServerHello"
 
 data KeyShareEntry = KeyShareEntry {
     keyShareEntryGroup :: Group
@@ -417,7 +417,7 @@ instance Extension KeyShare where
         case mgrp of
           Nothing  -> fail "decoding KeyShare for HRR"
           Just grp -> return $ KeyShareHRR grp
-    extensionDecode _ = error "extensionDecode: KeyShare"
+    extensionDecode _ = fail "extensionDecode: KeyShare"
 
 data PskKexMode = PSK_KE | PSK_DHE_KE deriving (Eq, Show)
 
@@ -478,7 +478,7 @@ instance Extension PreSharedKey where
             binder <- getBytes l
             let len = l + 1
             return (len, binder)
-    extensionDecode _ = error "decoding PreShareKey"
+    extensionDecode _ = fail "decoding PreShareKey"
 
 data EarlyDataIndication = EarlyDataIndication (Maybe Word32) deriving (Eq, Show)
 instance Extension EarlyDataIndication where
@@ -490,7 +490,7 @@ instance Extension EarlyDataIndication where
     extensionDecode MsgTNewSessionTicket    = runGetMaybe $ do
         w32 <- getWord32
         return (EarlyDataIndication (Just w32))
-    extensionDecode _                       = error "extensionDecode: EarlyDataIndication"
+    extensionDecode _                       = fail "extensionDecode: EarlyDataIndication"
 
 newtype Cookie = Cookie ByteString deriving (Eq, Show)
 
