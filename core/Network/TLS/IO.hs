@@ -28,6 +28,7 @@ import Network.TLS.Sending13
 import Network.TLS.Receiving
 import Network.TLS.Imports
 import Network.TLS.Receiving13
+import Network.TLS.State
 import Network.TLS.Handshake.State
 import qualified Data.ByteString as B
 
@@ -97,6 +98,9 @@ recvRecord compatSSLv2 ctx
                     withLog ctx $ \logging -> loggingIORecv logging header content
                     runRxState ctx $ disengageRecord $ rawToRecord header (fragmentCiphertext content)
 
+isCCS :: Record a -> Bool
+isCCS (Record ProtocolType_ChangeCipherSpec _ _) = True
+isCCS _                                          = False
 
 -- | receive one packet from the context that contains 1 or
 -- many messages (many only in case of handshake). if will returns a
@@ -108,17 +112,21 @@ recvPacket ctx = liftIO $ do
     case erecord of
         Left err     -> return $ Left err
         Right record -> do
-            pktRecv <- processPacket ctx record
-            pkt <- case pktRecv of
-                    Right (Handshake hss) ->
-                        ctxWithHooks ctx $ \hooks ->
-                            Right . Handshake <$> mapM (hookRecvHandshake hooks) hss
-                    _                     -> return pktRecv
-            case pkt of
-                Right p -> withLog ctx $ \logging -> loggingPacketRecv logging $ show p
-                _       -> return ()
-            when compatSSLv2 $ ctxDisableSSLv2ClientHello ctx
-            return pkt
+            hrr <- usingState_ ctx getTLS13HRR
+            if hrr && isCCS record then
+                recvPacket ctx
+              else do
+                pktRecv <- processPacket ctx record
+                pkt <- case pktRecv of
+                        Right (Handshake hss) ->
+                            ctxWithHooks ctx $ \hooks ->
+                                (mapM (hookRecvHandshake hooks) hss) >>= return . Right . Handshake
+                        _                     -> return pktRecv
+                case pkt of
+                    Right p -> withLog ctx $ \logging -> loggingPacketRecv logging $ show p
+                    _       -> return ()
+                when compatSSLv2 $ ctxDisableSSLv2ClientHello ctx
+                return pkt
 
 -- | Send one packet to the context
 sendPacket :: MonadIO m => Context -> Packet -> m ()
