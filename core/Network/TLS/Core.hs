@@ -154,10 +154,11 @@ recvData13 ctx = liftIO $ do
                 usedHash = cipherHash usedCipher
                 hashSize = hashDigestSize usedHash
             let psk = hkdfExpandLabel usedHash resumptionMasterSecret "resumption" nonce hashSize
-            usingHState ctx $ setTLS13MasterSecret $ Just psk
+--            usingHState ctx $ setTLS13MasterSecret $ Just psk
             mgrp <- usingHState ctx getTLS13Group
             tinfo <- createTLS13TicketInfo life $ Right add
-            Just sdata <- getSessionData ctx mgrp (Just tinfo)
+            Just sdata' <- getSessionData ctx mgrp (Just tinfo)
+            let sdata = sdata' { sessionSecret = psk }
             sessionEstablish (sharedSessionManager $ ctxShared ctx) ticket sdata
             putStrLn $ "NewSessionTicket received: lifetime = " ++ show life
             recvData13 ctx
