@@ -127,7 +127,9 @@ data ServerParams = ServerParams
     , serverHooks             :: ServerHooks
     , serverSupported         :: Supported
     , serverDebug             :: DebugParams
-    , serverAccept0RTT        :: Bool
+      -- | Max data size for TLS 1.3 0-RTT data.
+      --   0 means that this server does not accept 0-RTT data.
+    , server0RTTMaxDataSize   :: Word32
     } deriving (Show)
 
 defaultParamsServer :: ServerParams
@@ -139,7 +141,7 @@ defaultParamsServer = ServerParams
     , serverShared           = def
     , serverSupported        = def
     , serverDebug            = defaultDebugParams
-    , serverAccept0RTT       = False
+    , server0RTTMaxDataSize  = 0
     }
 
 instance Default ServerParams where

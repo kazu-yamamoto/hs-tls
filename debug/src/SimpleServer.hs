@@ -75,7 +75,7 @@ getDefaultParams flags store smgr cred rtt0accept = do
                                                     then (\seed -> putStrLn ("seed: " ++ show (seedToInteger seed)))
                                                     else (\_ -> return ())
                             }
-        , serverAccept0RTT = rtt0accept
+        , server0RTTMaxDataSize = if rtt0accept then 2048 else 0
         }
     where
             validateCache

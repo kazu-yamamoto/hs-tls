@@ -814,7 +814,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
             _      -> return (zero, Nothing, False)
       _ -> return (zero, Nothing, False)
 
-    rtt0accept = serverAccept0RTT sparams
+    rtt0accept = server0RTTMaxDataSize sparams /= 0
     rtt0 = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTClientHello of
              Just (EarlyDataIndication _) -> True
              Nothing                      -> False
@@ -894,7 +894,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
            grp = keyShareEntryGroup clientKeyShare
         createNewSessionTicket life add nonce ticket = NewSessionTicket13 life add nonce ticket extensions
           where
-            tedi = extensionEncode $ EarlyDataIndication (Just 2048) -- 2 KiB: fixme hard coding
+            tedi = extensionEncode $ EarlyDataIndication (Just $ server0RTTMaxDataSize sparams)
             extensions = [ExtensionRaw extensionID_EarlyData tedi]
 
     hashSize = hashDigestSize usedHash
