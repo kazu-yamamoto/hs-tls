@@ -39,7 +39,6 @@ import Network.TLS.Parameters
 import Network.TLS.IO
 import Network.TLS.Session
 import Network.TLS.Handshake
-import Network.TLS.Handshake.Common
 import Network.TLS.Handshake.Common13
 import Network.TLS.Handshake.State
 import Network.TLS.Handshake.State13
@@ -72,6 +71,7 @@ bye ctx = do
 -- | If the ALPN extensions have been used, this will
 -- return get the protocol agreed upon.
 getNegotiatedProtocol :: MonadIO m => Context -> m (Maybe B.ByteString)
+
 getNegotiatedProtocol ctx = liftIO $ usingState_ ctx S.getNegotiatedProtocol
 
 type HostName = String
@@ -148,17 +148,25 @@ recvData13 ctx = liftIO $ do
             finishedAction verifyData'
             recvData13 ctx
         process (Handshake13 [NewSessionTicket13 life add nonce ticket _exts]) = do
-            Just resumptionMasterSecret <- usingHState ctx getTLS13MasterSecret
+            ResuptionSecret resumptionMasterSecret <- usingHState ctx getTLS13Secret
             tx <- readMVar (ctxTxState ctx)
             let Just usedCipher = stCipher tx
                 usedHash = cipherHash usedCipher
                 hashSize = hashDigestSize usedHash
             let psk = hkdfExpandLabel usedHash resumptionMasterSecret "resumption" nonce hashSize
---            usingHState ctx $ setTLS13MasterSecret $ Just psk
-            mgrp <- usingHState ctx getTLS13Group
+            mgrp  <- usingHState ctx getTLS13Group
             tinfo <- createTLS13TicketInfo life $ Right add
-            Just sdata' <- getSessionData ctx mgrp (Just tinfo)
-            let sdata = sdata' { sessionSecret = psk }
+            malpn <- getNegotiatedProtocol ctx
+            let sdata = SessionData
+                        { sessionVersion     = TLS13ID22
+                        , sessionCipher      = cipherID usedCipher
+                        , sessionCompression = 0
+                        , sessionClientSNI   = undefined
+                        , sessionSecret      = psk
+                        , sessionGroup       = mgrp
+                        , sessionTicketInfo  = Just tinfo
+                        , sessionALPN        = malpn
+                        }
             sessionEstablish (sharedSessionManager $ ctxShared ctx) ticket sdata
             putStrLn $ "NewSessionTicket received: lifetime = " ++ show life
             recvData13 ctx

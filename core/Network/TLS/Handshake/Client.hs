@@ -221,7 +221,7 @@ handshakeClient' cparams ctx groups mcrand = do
                           zero = B.replicate siz 0
                           psk = sessionSecret sdata
                           earlySecret = hkdfExtract usedHash zero psk
-                      usingHState ctx $ setTLS13MasterSecret (Just earlySecret)
+                      usingHState ctx $ setTLS13Secret (EarlySecret earlySecret)
                       let ech = encodeHandshake ch
                       binder <- makePSKBinder ctx earlySecret usedHash (siz + 3) (Just ech)
                       let exts' = init exts ++ [adjust (last exts)]
@@ -266,7 +266,7 @@ handshakeClient' cparams ctx groups mcrand = do
                 -- hCh <- transcriptHash ctx
                 hmsgs <- usingHState ctx getHandshakeMessages
                 let hCh = hash usedHash $ B.concat hmsgs -- XXX
-                Just earlySecret <- usingHState ctx getTLS13MasterSecret -- fixme
+                EarlySecret earlySecret <- usingHState ctx getTLS13Secret -- fixme
                 let clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "c e traffic" hCh
 {-
                 putStrLn $ "hCh: " ++ showBytesHex hCh
@@ -702,10 +702,9 @@ handshakeClient13' cparams ctx usedCipher usedHash = do
         usingHState ctx getGroupPrivate >>= fromServerKeyShare serverKeyShare
 
     makeEarlySecret = do
-        mEarlySecret <- usingHState ctx getTLS13MasterSecret
-        case mEarlySecret of
-          Nothing  -> return (hkdfExtract usedHash zero zero, False)
-          Just sec -> do
+        secret <- usingHState ctx getTLS13Secret
+        case secret of
+          EarlySecret sec -> do
               mpsk <- usingState_ ctx getTLS13PreSharedKey
               case mpsk of
                 Nothing                          -> do
@@ -713,6 +712,7 @@ handshakeClient13' cparams ctx usedCipher usedHash = do
                     return (hkdfExtract usedHash zero zero, False)
                 Just (PreSharedKeyServerHello 0) -> putStrLn "PSK[0] is used" >> return (sec, True)
                 Just _                           -> throwCore $ Error_Protocol ("psk out of range", True, IllegalParameter)
+          _ -> return (hkdfExtract usedHash zero zero, False)
 
     recvEncryptedExtensions = do
         ee@(EncryptedExtensions13 eexts) <- recvHandshake13 ctx
@@ -758,7 +758,7 @@ handshakeClient13' cparams ctx usedCipher usedHash = do
     setResumptionSecret masterSecret = do
         hChCf <- transcriptHash ctx
         let resumptionMasterSecret = deriveSecret usedHash masterSecret "res master" hChCf
-        usingHState ctx $ setTLS13MasterSecret $ Just resumptionMasterSecret
+        usingHState ctx $ setTLS13Secret $ ResuptionSecret resumptionMasterSecret
 
 update :: Context -> Handshake13 -> IO ()
 update ctx hs = usingHState ctx $ do

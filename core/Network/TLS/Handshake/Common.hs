@@ -32,7 +32,6 @@ import Network.TLS.Record.State
 import Network.TLS.Measurement
 import Network.TLS.Types
 import Network.TLS.Cipher
-import Network.TLS.Crypto.Types (Group)
 import Network.TLS.Util
 import Network.TLS.Imports
 
@@ -61,7 +60,7 @@ handshakeTerminate ctx = do
     -- only callback the session established if we have a session
     case session of
         Session (Just sessionId) -> do
-            sessionData <- getSessionData ctx Nothing Nothing
+            sessionData <- getSessionData ctx
             liftIO $ sessionEstablish (sharedSessionManager $ ctxShared ctx) sessionId (fromJust "session-data" sessionData)
         _ -> return ()
     -- forget most handshake data and reset bytes counters.
@@ -122,13 +121,13 @@ runRecvState _    RecvStateDone    = return ()
 runRecvState ctx (RecvStateNext f) = recvPacket ctx >>= either throwCore f >>= runRecvState ctx
 runRecvState ctx iniState          = recvPacketHandshake ctx >>= onRecvStateHandshake ctx iniState >>= runRecvState ctx
 
-getSessionData :: Context -> Maybe Group -> Maybe TLS13TicketInfo -> IO (Maybe SessionData)
-getSessionData ctx mgroup mlife = do
+getSessionData :: Context -> IO (Maybe SessionData)
+getSessionData ctx = do
     ver <- usingState_ ctx getVersion
     sni <- usingState_ ctx getClientSNI
-    alpn <- usingState_ ctx getNegotiatedProtocol
     mms <- usingHState ctx (gets hstMasterSecret)
     tx  <- liftIO $ readMVar (ctxTxState ctx)
+    alpn <- usingState_ ctx getNegotiatedProtocol
     case mms of
         Nothing -> return Nothing
         Just ms -> return $ Just SessionData
@@ -136,10 +135,10 @@ getSessionData ctx mgroup mlife = do
                         , sessionCipher      = cipherID $ fromJust "cipher" $ stCipher tx
                         , sessionCompression = compressionID $ stCompression tx
                         , sessionClientSNI   = sni
-                        , sessionSecret     = ms
-                        , sessionGroup      = mgroup
-                        , sessionTicketInfo = mlife
-                        , sessionALPN       = alpn
+                        , sessionSecret      = ms
+                        , sessionGroup       = Nothing
+                        , sessionTicketInfo  = Nothing
+                        , sessionALPN        = alpn
                         }
 
 extensionLookup :: ExtensionID -> [ExtensionRaw] -> Maybe ByteString
