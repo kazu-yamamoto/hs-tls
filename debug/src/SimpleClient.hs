@@ -65,6 +65,7 @@ getDefaultParams flags host store sStorage certCredsRequest session earlyData =
         { clientSupported = def { supportedVersions = supportedVers
                                 , supportedCiphers = myCiphers
                                 , supportedGroups = getGroups flags
+                                , supportedEarlyData = earlyData
                                 }
         , clientWantSessionResume = session
         , clientUseServerNameIndication = not (NoSNI `elem` flags)
@@ -79,7 +80,6 @@ getDefaultParams flags host store sStorage certCredsRequest session earlyData =
                                                     then (\seed -> putStrLn ("seed: " ++ show (seedToInteger seed)))
                                                     else (\_ -> return ())
                             }
-        , client0RTTData = earlyData
         }
     where
             serverName = foldl f host flags
@@ -209,19 +209,19 @@ runOn (sStorage, certStore) flags port hostname
     | BenchRecv `elem` flags = runBench False
     | otherwise              = do
         certCredRequest <- getCredRequest
-        doTLS certCredRequest noSession Nothing
+        doTLS certCredRequest noSession NoEarlyData
         when (Session `elem` flags) $ do
             putStrLn "\nResuming the session..."
             session <- readIORef sStorage
             earlyData <- case getInput of
-              Nothing -> return Nothing
-              Just i  -> Just <$> B.readFile i
+              Nothing -> return NoEarlyData
+              Just i  -> SendEarlyData <$> B.readFile i
             doTLS certCredRequest (Just session) earlyData
   where
         runBench isSend =
             runTLS (Debug `elem` flags)
                    (IODebug `elem` flags)
-                   (getDefaultParams flags hostname certStore sStorage Nothing noSession Nothing) hostname port $ \ctx -> do
+                   (getDefaultParams flags hostname certStore sStorage Nothing noSession NoEarlyData) hostname port $ \ctx -> do
                 handshake ctx
                 if isSend
                     then loopSendData getBenchAmount ctx
@@ -256,14 +256,14 @@ runOn (sStorage, certStore) flags port hostname
                 handshake ctx
                 when (Verbose `elem` flags) $ printHandshakeInfo ctx
                 case earlyData of
-                    Nothing -> return ()
-                    Just edata -> do
+                    SendEarlyData edata -> do
                         minfo <- contextGetInformation ctx
                         case minfo of
                             Nothing -> return () -- what should we do?
                             Just info -> unless (info0RTTAccepted info) $ do
                                 putStrLn "Resending 0RTT data ..."
                                 sendData ctx $ LC.fromStrict edata
+                    _ -> return ()
                 sendData ctx $ query
                 loopRecv out ctx
                 bye ctx `catch` \(SomeException e) -> putStrLn $ "bye failed: " ++ show e

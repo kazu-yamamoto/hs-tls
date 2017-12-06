@@ -22,6 +22,7 @@ module Network.TLS.Parameters
     , GroupUsage(..)
     , CertificateUsage(..)
     , CertificateRejectReason(..)
+    , EarlyData(..)
     ) where
 
 import Network.TLS.Extension
@@ -89,7 +90,6 @@ data ClientParams = ClientParams
       -- of 'supportedCiphers' with a suitable cipherlist.
     , clientSupported                 :: Supported
     , clientDebug                     :: DebugParams
-    , client0RTTData                  :: Maybe ByteString
     } deriving (Show)
 
 defaultParamsClient :: HostName -> ByteString -> ClientParams
@@ -102,7 +102,6 @@ defaultParamsClient serverName serverId = ClientParams
     , clientHooks                = def
     , clientSupported            = def
     , clientDebug                = defaultDebugParams
-    , client0RTTData             = Nothing
     }
 
 data ServerParams = ServerParams
@@ -127,9 +126,6 @@ data ServerParams = ServerParams
     , serverHooks             :: ServerHooks
     , serverSupported         :: Supported
     , serverDebug             :: DebugParams
-      -- | Max data size for TLS 1.3 0-RTT data.
-      --   0 means that this server does not accept 0-RTT data.
-    , server0RTTMaxDataSize   :: Word32
     } deriving (Show)
 
 defaultParamsServer :: ServerParams
@@ -141,7 +137,6 @@ defaultParamsServer = ServerParams
     , serverShared           = def
     , serverSupported        = def
     , serverDebug            = defaultDebugParams
-    , server0RTTMaxDataSize  = 0
     }
 
 instance Default ServerParams where
@@ -200,7 +195,13 @@ data Supported = Supported
       --   enough until 2030.  Both curves are fast because their
       --   backends are written in C.
     , supportedGroups              :: [Group]
+    , supportedEarlyData           :: EarlyData
     } deriving (Show,Eq)
+
+data EarlyData = NoEarlyData
+               | AcceptEarlyData Word32
+               | SendEarlyData ByteString
+               deriving (Eq, Show)
 
 defaultSupported :: Supported
 defaultSupported = Supported
@@ -225,6 +226,7 @@ defaultSupported = Supported
     , supportedFallbackScsv        = True
     , supportedEmptyPacket         = True
     , supportedGroups              = [X25519,P256,P384,P521]
+    , supportedEarlyData           = AcceptEarlyData 0
     }
 
 instance Default Supported where

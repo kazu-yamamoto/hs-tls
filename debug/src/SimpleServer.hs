@@ -69,13 +69,16 @@ getDefaultParams flags store smgr cred rtt0accept = do
         , serverSupported = def { supportedVersions = supportedVers
                                 , supportedCiphers = myCiphers
                                 , supportedGroups = [X25519, P256]
-                                , supportedClientInitiatedRenegotiation = allowRenegotiation }
+                                , supportedClientInitiatedRenegotiation = allowRenegotiation
+                                , supportedEarlyData = if rtt0accept
+                                                       then AcceptEarlyData 2048
+                                                       else NoEarlyData
+                                }
         , serverDebug = def { debugSeed      = foldl getDebugSeed Nothing flags
                             , debugPrintSeed = if DebugPrintSeed `elem` flags
                                                     then (\seed -> putStrLn ("seed: " ++ show (seedToInteger seed)))
                                                     else (\_ -> return ())
                             }
-        , server0RTTMaxDataSize = if rtt0accept then 2048 else 0
         }
     where
             validateCache

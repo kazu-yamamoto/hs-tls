@@ -814,7 +814,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
             _      -> return (zero, Nothing, False)
       _ -> return (zero, Nothing, False)
 
-    rtt0accept = server0RTTMaxDataSize sparams /= 0
+    rtt0accept = maxEarlyDataSize ctx /= 0
     rtt0 = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTClientHello of
              Just (EarlyDataIndication _) -> True
              Nothing                      -> False
@@ -894,7 +894,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
            grp = keyShareEntryGroup clientKeyShare
         createNewSessionTicket life add nonce ticket = NewSessionTicket13 life add nonce ticket extensions
           where
-            tedi = extensionEncode $ EarlyDataIndication (Just $ server0RTTMaxDataSize sparams)
+            tedi = extensionEncode $ EarlyDataIndication (Just $ maxEarlyDataSize ctx)
             extensions = [ExtensionRaw extensionID_EarlyData tedi]
 
     hashSize = hashDigestSize usedHash
@@ -1002,3 +1002,8 @@ credentialsFindForSigning13' sigAlg (Credentials l) = find forSigning l
     forSigning cred = case credentialDigitalSignatureAlg cred of
         Nothing  -> False
         Just sig -> sig `signatureCompatible` sigAlg
+
+maxEarlyDataSize :: Context -> Word32
+maxEarlyDataSize ctx = case supportedEarlyData (ctxSupported ctx) of
+                         AcceptEarlyData maxsize -> maxsize
+                         _                       -> 0
