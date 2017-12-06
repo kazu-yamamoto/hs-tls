@@ -824,8 +824,8 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
         binder' <- makePSKBinder ctx earlySecret usedHash tlen Nothing
         when (binder /= binder') $
             throwCore $ Error_Protocol ("PSK binder validation failed", True, HandshakeFailure)
-        let spsk = extensionEncode $ PreSharedKeyServerHello $ fromIntegral n
-        return [ExtensionRaw extensionID_PreSharedKey spsk]
+        let selectedIdentity = extensionEncode $ PreSharedKeyServerHello $ fromIntegral n
+        return [ExtensionRaw extensionID_PreSharedKey selectedIdentity]
 
     makeServerHello keyShare srand extensions = do
         let serverKeyShare = extensionEncode $ KeyShareServerHello keyShare
