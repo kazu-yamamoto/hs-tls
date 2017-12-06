@@ -184,8 +184,8 @@ handshakeClient' cparams ctx groups mcrand = do
                       if isAgeValid age tinfo then do
                           let obfAge = ageToObfuscatedAge age tinfo
                           let identity = PskIdentity sid obfAge
-                              psk = PreSharedKeyClientHello [identity] [zero]
-                          return $ Just $ toExtensionRaw psk
+                              offeredPsks = PreSharedKeyClientHello [identity] [zero]
+                          return $ Just $ toExtensionRaw offeredPsks
                         else
                           return Nothing
                 | otherwise                         -> return Nothing
@@ -225,9 +225,9 @@ handshakeClient' cparams ctx groups mcrand = do
                       let ech = encodeHandshake ch
                       binder <- makePSKBinder ctx earlySecret usedHash (siz + 3) (Just ech)
                       let exts' = init exts ++ [adjust (last exts)]
-                          adjust (ExtensionRaw eid pskz) = (ExtensionRaw eid pskb)
+                          adjust (ExtensionRaw eid withoutBinders) = (ExtensionRaw eid withBinders)
                             where
-                              pskb = replacePSKBinder pskz binder
+                              withBinders = replacePSKBinder withoutBinders binder
                       return exts'
                 | otherwise                         -> return exts
 
@@ -705,13 +705,13 @@ handshakeClient13' cparams ctx usedCipher usedHash = do
         secret <- usingHState ctx getTLS13Secret
         case secret of
           EarlySecret sec -> do
-              mpsk <- usingState_ ctx getTLS13PreSharedKey
-              case mpsk of
+              mSelectedIdentity <- usingState_ ctx getTLS13PreSharedKey
+              case mSelectedIdentity of
                 Nothing                          -> do
                     putStrLn "PSK is not accepted by the server ... falling back to full handshake"
                     return (hkdfExtract usedHash zero zero, False)
                 Just (PreSharedKeyServerHello 0) -> putStrLn "PSK[0] is used" >> return (sec, True)
-                Just _                           -> throwCore $ Error_Protocol ("psk out of range", True, IllegalParameter)
+                Just _                           -> throwCore $ Error_Protocol ("selected identity out of range", True, IllegalParameter)
           _ -> return (hkdfExtract usedHash zero zero, False)
 
     recvEncryptedExtensions = do
