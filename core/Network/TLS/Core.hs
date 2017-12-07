@@ -39,12 +39,14 @@ import Network.TLS.Parameters
 import Network.TLS.IO
 import Network.TLS.Session
 import Network.TLS.Handshake
+import Network.TLS.Handshake.Common
 import Network.TLS.Handshake.Common13
 import Network.TLS.Handshake.State
 import Network.TLS.Handshake.State13
 import Network.TLS.KeySchedule
 import Network.TLS.Record.State
 import Network.TLS.Util (catchException)
+import Network.TLS.Extension
 import qualified Network.TLS.State as S
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C8
@@ -147,15 +149,18 @@ recvData13 ctx = liftIO $ do
             finishedAction <- popPendingAction ctx
             finishedAction verifyData'
             recvData13 ctx
-        process (Handshake13 [NewSessionTicket13 life add nonce label _exts]) = do
+        process (Handshake13 [NewSessionTicket13 life add nonce label exts]) = do
             ResuptionSecret resumptionMasterSecret <- usingHState ctx getTLS13Secret
             tx <- readMVar (ctxTxState ctx)
             let Just usedCipher = stCipher tx
                 usedHash = cipherHash usedCipher
                 hashSize = hashDigestSize usedHash
             let psk = hkdfExpandLabel usedHash resumptionMasterSecret "resumption" nonce hashSize
+                maxSize = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTNewSessionTicket of
+                  Just (EarlyDataIndication (Just ms)) -> ms
+                  _                                    -> 0
             tinfo <- createTLS13TicketInfo life $ Right add
-            sdata <- getSessionData13 ctx usedCipher tinfo psk
+            sdata <- getSessionData13 ctx usedCipher tinfo maxSize psk
             sessionEstablish (sharedSessionManager $ ctxShared ctx) label sdata
             putStrLn $ "NewSessionTicket received: lifetime = " ++ show life
             recvData13 ctx

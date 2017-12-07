@@ -251,9 +251,11 @@ handshakeClient' cparams ctx groups mcrand = do
         checkZeroRTT = case clientWantSessionResume cparams of
             Just (_, sdata)
               | sessionVersion sdata >= TLS13ID22 -> case supportedEarlyData (ctxSupported ctx) of
-                SendEarlyData earlyData -> Just (sessionCipher sdata, earlyData)
+                SendEarlyData earlyData
+                  | fromIntegral (B.length earlyData) <= sessionMaxEarlyDataSize sdata                                  -> Just (sessionCipher sdata, earlyData)
+                  | otherwise           -> Nothing
                 _                       -> Nothing
-            _ -> Nothing
+            _                           -> Nothing
 
         sendZeroRTT = case checkZeroRTT of
             Nothing -> return ()

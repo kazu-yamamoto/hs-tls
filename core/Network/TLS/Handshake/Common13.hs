@@ -185,8 +185,8 @@ millisecondsFromBase d = fromInteger ms
 
 ----------------------------------------------------------------
 
-getSessionData13 :: Context -> Cipher -> TLS13TicketInfo -> ByteString -> IO SessionData
-getSessionData13 ctx usedCipher tinfo psk = do
+getSessionData13 :: Context -> Cipher -> TLS13TicketInfo -> Word32 -> ByteString -> IO SessionData
+getSessionData13 ctx usedCipher tinfo maxSize psk = do
     ver   <- usingState_ ctx getVersion
     malpn <- usingState_ ctx getNegotiatedProtocol
     sni   <- usingState_ ctx getClientSNI
@@ -200,6 +200,7 @@ getSessionData13 ctx usedCipher tinfo psk = do
       , sessionGroup       = mgrp
       , sessionTicketInfo  = Just tinfo
       , sessionALPN        = malpn
+      , sessionMaxEarlyDataSize = maxSize
       }
 
 ----------------------------------------------------------------

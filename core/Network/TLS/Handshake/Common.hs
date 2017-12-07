@@ -139,6 +139,7 @@ getSessionData ctx = do
                         , sessionGroup       = Nothing
                         , sessionTicketInfo  = Nothing
                         , sessionALPN        = alpn
+                        , sessionMaxEarlyDataSize = 0
                         }
 
 extensionLookup :: ExtensionID -> [ExtensionRaw] -> Maybe ByteString
