@@ -873,22 +873,22 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
         let resumptionMasterSecret = deriveSecret usedHash masterSecret "res master" hChCf
             life = 86400 -- 1 day in second: fixme hard coding
             psk = hkdfExpandLabel usedHash resumptionMasterSecret "resumption" nonce hashSize
-        (ticket, add) <- createSessionTicket life psk
-        let nst = createNewSessionTicket life add nonce ticket
+        (label, add) <- generateSession life psk
+        let nst = createNewSessionTicket life add nonce label
         sendPacket13 ctx $ Handshake13 [nst]
       where
         sendNST = (PSK_KE `elem` dhModes) || (PSK_DHE_KE `elem` dhModes)
         dhModes = case extensionLookup extensionID_PskKeyExchangeModes exts >>= extensionDecode MsgTClientHello of
           Just (PskKeyExchangeModes ms) -> ms
           Nothing                       -> []
-        createSessionTicket life psk = do
+        generateSession life psk = do
             Session (Just sessionId) <- newSession ctx
             tinfo <- createTLS13TicketInfo life (Left ctx)
             sdata <- getSessionData13 ctx usedCipher tinfo psk
             let mgr = sharedSessionManager $ serverShared sparams
             sessionEstablish mgr sessionId sdata
             return (sessionId, ageAdd tinfo)
-        createNewSessionTicket life add nonce ticket = NewSessionTicket13 life add nonce ticket extensions
+        createNewSessionTicket life add nonce label = NewSessionTicket13 life add nonce label extensions
           where
             tedi = extensionEncode $ EarlyDataIndication (Just $ maxEarlyDataSize ctx)
             extensions = [ExtensionRaw extensionID_EarlyData tedi]

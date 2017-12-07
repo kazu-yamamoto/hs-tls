@@ -48,11 +48,11 @@ encodeHandshake13' (CertVerify13 hs signature) = runPut $ do
     putSignatureHashAlgorithm hs
     putOpaque16 signature
 encodeHandshake13' (Finished13 dat) = runPut $ putBytes dat
-encodeHandshake13' (NewSessionTicket13 life ageadd nonce ticket exts) = runPut $ do
+encodeHandshake13' (NewSessionTicket13 life ageadd nonce label exts) = runPut $ do
     putWord32 life
     putWord32 ageadd
     putOpaque8 nonce
-    putOpaque16 ticket
+    putOpaque16 label
     putExtensions exts
 encodeHandshake13' EndOfEarlyData13 = ""
 encodeHandshake13' _ = error "encodeHandshake13'"
@@ -121,10 +121,10 @@ decodeNewSessionTicket13 = do
     life   <- getWord32
     ageadd <- getWord32
     nonce  <- getOpaque8
-    ticket <- getOpaque16
+    label  <- getOpaque16
     len    <- fromIntegral <$> getWord16
     exts   <- getExtensions len
-    return $ NewSessionTicket13 life ageadd nonce ticket exts
+    return $ NewSessionTicket13 life ageadd nonce label exts
 
 hrrRandom :: ByteString
 hrrRandom = B.pack [

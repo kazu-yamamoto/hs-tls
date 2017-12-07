@@ -147,7 +147,7 @@ recvData13 ctx = liftIO $ do
             finishedAction <- popPendingAction ctx
             finishedAction verifyData'
             recvData13 ctx
-        process (Handshake13 [NewSessionTicket13 life add nonce ticket _exts]) = do
+        process (Handshake13 [NewSessionTicket13 life add nonce label _exts]) = do
             ResuptionSecret resumptionMasterSecret <- usingHState ctx getTLS13Secret
             tx <- readMVar (ctxTxState ctx)
             let Just usedCipher = stCipher tx
@@ -156,7 +156,7 @@ recvData13 ctx = liftIO $ do
             let psk = hkdfExpandLabel usedHash resumptionMasterSecret "resumption" nonce hashSize
             tinfo <- createTLS13TicketInfo life $ Right add
             sdata <- getSessionData13 ctx usedCipher tinfo psk
-            sessionEstablish (sharedSessionManager $ ctxShared ctx) ticket sdata
+            sessionEstablish (sharedSessionManager $ ctxShared ctx) label sdata
             putStrLn $ "NewSessionTicket received: lifetime = " ++ show life
             recvData13 ctx
         -- when receiving empty appdata, we just retry to get some data.
