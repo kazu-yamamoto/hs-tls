@@ -194,7 +194,7 @@ handshakeClient' cparams ctx groups mcrand = do
           | tls13     = return $ Just $ toExtensionRaw $ PskKeyExchangeModes [PSK_DHE_KE]
           | otherwise = return Nothing
 
-        earlyDataExtension = case checkZeroRTT of
+        earlyDataExtension = case check0RTT of
             Nothing -> return $ Nothing
             _       -> return $ Just $ toExtensionRaw (EarlyDataIndication Nothing)
 
@@ -245,10 +245,10 @@ handshakeClient' cparams ctx groups mcrand = do
             extensions0 <- catMaybes <$> getExtensions
             extensions <- adjustExtentions extensions0 $ mkClientHello extensions0
             sendPacket ctx $ Handshake [mkClientHello extensions]
-            sendZeroRTT
+            send0RTT
             return $ map (\(ExtensionRaw i _) -> i) extensions
 
-        checkZeroRTT = case clientWantSessionResume cparams of
+        check0RTT = case clientWantSessionResume cparams of
             Just (_, sdata)
               | sessionVersion sdata >= TLS13ID22 -> case supportedEarlyData (ctxSupported ctx) of
                 SendEarlyData earlyData
@@ -257,7 +257,7 @@ handshakeClient' cparams ctx groups mcrand = do
                 _                       -> Nothing
             _                           -> Nothing
 
-        sendZeroRTT = case checkZeroRTT of
+        send0RTT = case check0RTT of
             Nothing -> return ()
             Just (cid, earlyData) -> do
                 let usedCipher = case cipherIDtoCipher13 cid of
