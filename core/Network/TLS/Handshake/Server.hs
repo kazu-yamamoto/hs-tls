@@ -784,31 +784,34 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
       Just (PreSharedKeyClientHello (PskIdentity sessionId obfAge:_) bnds@(bnd:_)) -> do
           let len = sum (map (\x -> B.length x + 1) bnds) + 2
               mgr = sharedSessionManager $ serverShared sparams
-          msdata <- if rtt0 then
-                        sessionResumeOnlyOnce mgr sessionId
-                      else
-                        sessionResume mgr sessionId
+          msdata <- if rtt0 then sessionResumeOnlyOnce mgr sessionId
+                            else sessionResume mgr sessionId
           case msdata of
             Just sdata -> do
                 let Just tinfo = sessionTicketInfo sdata
+                    psk = sessionSecret sdata
                 isFresh <- checkFreshness tinfo obfAge
-                msni <- usingState_ ctx getClientSNI
-                malpn <- usingState_ ctx getNegotiatedProtocol
-                let isSameSNI = sessionClientSNI sdata == msni
-                    (isSameCipher,isSameKDF) = case cipherIDtoCipher13 (sessionCipher sdata) of
-                      Nothing -> (False,False)
-                      Just c  -> (c == usedCipher,cipherHash c == cipherHash usedCipher)
-                    isSameVersion = chosenVersion == sessionVersion sdata
-                    isSameALPN = sessionALPN sdata == malpn
-                    is0RTTvalid = isSameVersion && isSameCipher && isSameALPN
-                if isSameKDF && isSameSNI && isFresh then do
-                    let psk = sessionSecret sdata
+                (isPSKvalid, is0RTTvalid) <- checkSessionEquality sdata
+                if isPSKvalid && isFresh then
                     return (psk, Just (bnd,0::Int,len),is0RTTvalid)
                   else
                     -- xxx: fixme: fall back to full handshake
                     throwCore $ Error_Protocol ("PSK validation failed", True, HandshakeFailure)
             _      -> return (zero, Nothing, False)
       _ -> return (zero, Nothing, False)
+
+    checkSessionEquality sdata = do
+        msni <- usingState_ ctx getClientSNI
+        malpn <- usingState_ ctx getNegotiatedProtocol
+        let isSameSNI = sessionClientSNI sdata == msni
+            (isSameCipher,isSameKDF) = case cipherIDtoCipher13 (sessionCipher sdata) of
+              Nothing -> (False,False)
+              Just c  -> (c == usedCipher,cipherHash c == cipherHash usedCipher)
+            isSameVersion = chosenVersion == sessionVersion sdata
+            isSameALPN = sessionALPN sdata == malpn
+            isPSKvalid = isSameKDF && isSameSNI -- fixme: SNI is not required
+            is0RTTvalid = isSameVersion && isSameCipher && isSameALPN
+        return (isPSKvalid, is0RTTvalid)
 
     rtt0accept = maxEarlyDataSize ctx /= 0
     rtt0 = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTClientHello of
