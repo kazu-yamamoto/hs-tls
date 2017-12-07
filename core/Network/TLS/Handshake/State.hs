@@ -58,6 +58,8 @@ module Network.TLS.Handshake.State
     , getTLS13HandshakeMsgs
     , setTLS13Secret
     , getTLS13Secret
+    , setRoundTripTime
+    , getRoundTripTime
     ) where
 
 import Network.TLS.Util
@@ -108,6 +110,7 @@ data HandshakeState = HandshakeState
     , hstTLS13RTT0Status     :: !RTT0Status
     , hstTLS13HandshakeMsgs  :: [Handshake13]
     , hstTLS13Secret         :: TLS13Secret
+    , hstRoundTripTime       :: Maybe Word32
     } deriving (Show)
 
 type ClientCertRequestData = ([CertificateType],
@@ -150,6 +153,7 @@ newEmptyHandshake ver crand = HandshakeState
     , hstTLS13RTT0Status     = RTT0None
     , hstTLS13HandshakeMsgs  = []
     , hstTLS13Secret         = NoSecret
+    , hstRoundTripTime       = Nothing
     }
 
 runHandshake :: HandshakeState -> HandshakeM a -> (a, HandshakeState)
@@ -222,6 +226,12 @@ setTLS13Secret secret = modify (\hst -> hst { hstTLS13Secret = secret })
 
 getTLS13Secret :: HandshakeM TLS13Secret
 getTLS13Secret = gets hstTLS13Secret
+
+setRoundTripTime :: Maybe Word32 -> HandshakeM ()
+setRoundTripTime mrtt = modify (\hst -> hst { hstRoundTripTime = mrtt })
+
+getRoundTripTime :: HandshakeM (Maybe Word32)
+getRoundTripTime = gets hstRoundTripTime
 
 setCertReqSent :: Bool -> HandshakeM ()
 setCertReqSent b = modify (\hst -> hst { hstCertReqSent = b })

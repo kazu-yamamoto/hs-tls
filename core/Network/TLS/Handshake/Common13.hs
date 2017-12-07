@@ -143,7 +143,7 @@ createTLS13TicketInfo :: Word32 -> Either Context Word32 -> IO TLS13TicketInfo
 createTLS13TicketInfo life ecw = do
     -- Left:  serverSendTime
     -- Right: clientReceiveTime
-    bTime <- millisecondsFromBase <$> getCurrentTime
+    bTime <- getCurrentTimeFromBase
     add <- case ecw of
         Left ctx -> B.foldl' (*+) 0 <$> usingState_ ctx (genRandom 4)
         Right ad -> return ad
@@ -167,13 +167,16 @@ isAgeValid age tinfo = age <= lifetime tinfo * 1000
 getAge :: TLS13TicketInfo -> IO Word32
 getAge tinfo = do
     let clientReceiveTime = txrxTime tinfo
-    clientSendTime <- millisecondsFromBase <$> getCurrentTime
+    clientSendTime <- getCurrentTimeFromBase
     return $! fromIntegral (clientSendTime - clientReceiveTime) -- milliseconds
 
 getTripTime :: TLS13TicketInfo -> IO Word32
 getTripTime (TLS13TicketInfo _ _ serverSendTime) = do
-    serverReceiveTime <- millisecondsFromBase <$> getCurrentTime
+    serverReceiveTime <- getCurrentTimeFromBase
     return $! fromIntegral (serverReceiveTime - serverSendTime) -- milliseconds
+
+getCurrentTimeFromBase :: IO Word64
+getCurrentTimeFromBase = millisecondsFromBase <$> getCurrentTime
 
 -- diffTimeToPicoseconds is not available in old time package
 millisecondsFromBase :: UTCTime -> Word64

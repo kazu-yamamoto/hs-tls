@@ -729,6 +729,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     serverHandshake <- makeServerHandshake authenticated serverHandshakeTrafficSecret rtt0OK
     Right ccs <- writePacket13 ctx ChangeCipherSpec13
     sendBytes13 ctx $ B.concat (helo : ccs : serverHandshake)
+    sfSentTime <- getCurrentTimeFromBase
     ----------------------------------------------------------------
     let masterSecret = hkdfExtract usedHash (deriveSecret usedHash handshakeSecret "derived" (hash usedHash "")) zero
     hChSf <- transcriptHash ctx
@@ -752,14 +753,18 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     putStrLn $ "clientApplicationTrafficSecret0: " ++ showBytesHex clientApplicationTrafficSecret0
 -}
     setTxState ctx usedHash usedCipher serverApplicationTrafficSecret0
-    sendNewSessionTicket masterSecret pendingTranscript
     ----------------------------------------------------------------
     let established = if rtt0OK then EarlyDataAllowed else EarlyDataNotAllowed
     setEstablished ctx established
     let finishedAction verifyData'
           | verifyData == verifyData' = do
+              cfRecvTime <- getCurrentTimeFromBase
+              let rtt = fromIntegral (cfRecvTime - sfSentTime)
+              usingHState ctx $ setRoundTripTime (Just rtt)
+              putStrLn $ "RoundTripTime: " ++ show rtt
               setEstablished ctx Established
               setRxState ctx usedHash usedCipher clientApplicationTrafficSecret0
+              sendNewSessionTicket masterSecret pendingTranscript
           | otherwise = throwCore $ Error_Protocol ("cannot verify finished", True, HandshakeFailure)
         endOfEarlyDataAction = \_ -> do
             setRxState ctx usedHash usedCipher clientHandshakeTrafficSecret
@@ -791,7 +796,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
                 let gap
                       | tripTime >= age = tripTime - age
                       | otherwise       = age - tripTime
-                putStrLn $ "Ticket: lifetime = " ++ show (lifetime tinfo * 1000) ++ ", age = " ++ show age ++ ", trip time = " ++ show tripTime
+                putStrLn $ "Ticket: lifetime = " ++ show (lifetime tinfo) ++ " sec, age = " ++ show age ++ " msec, trip time = " ++ show tripTime ++ " msec"
                 msni <- usingState_ ctx getClientSNI
                 malpn <- usingState_ ctx getNegotiatedProtocol
                 let isSameSNI = sessionClientSNI sdata == msni
