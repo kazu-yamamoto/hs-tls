@@ -48,6 +48,7 @@ data TLS13TicketInfo = TLS13TicketInfo
     { lifetime :: Word32 -- NewSessionTicket.ticket_lifetime in seconds
     , ageAdd   :: Word32 -- NewSessionTicket.ticket_age_add
     , txrxTime :: Word64 -- serverSendTime or clientReceiveTime in milliseconds
+    , estimatedRTT :: Maybe Word64 -- in milliseconds
     } deriving (Show,Eq)
 
 -- | Cipher identification

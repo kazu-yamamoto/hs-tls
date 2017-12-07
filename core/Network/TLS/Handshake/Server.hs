@@ -759,12 +759,12 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     let finishedAction verifyData'
           | verifyData == verifyData' = do
               cfRecvTime <- getCurrentTimeFromBase
-              let rtt = fromIntegral (cfRecvTime - sfSentTime)
+              let rtt = cfRecvTime - sfSentTime
               usingHState ctx $ setRoundTripTime (Just rtt)
               putStrLn $ "RoundTripTime: " ++ show rtt
               setEstablished ctx Established
               setRxState ctx usedHash usedCipher clientApplicationTrafficSecret0
-              sendNewSessionTicket masterSecret pendingTranscript
+              sendNewSessionTicket masterSecret pendingTranscript rtt
           | otherwise = throwCore $ Error_Protocol ("cannot verify finished", True, HandshakeFailure)
         endOfEarlyDataAction = \_ -> do
             setRxState ctx usedHash usedCipher clientHandshakeTrafficSecret
@@ -791,12 +791,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
           case msdata of
             Just sdata -> do
                 let Just tinfo = sessionTicketInfo sdata
-                    age = obfuscatedAgeToAge obfAge tinfo
-                tripTime <- getTripTime tinfo
-                let gap
-                      | tripTime >= age = tripTime - age
-                      | otherwise       = age - tripTime
-                putStrLn $ "Ticket: lifetime = " ++ show (lifetime tinfo) ++ " sec, age = " ++ show age ++ " msec, trip time = " ++ show tripTime ++ " msec"
+                isFresh <- checkFreshness tinfo obfAge
                 msni <- usingState_ ctx getClientSNI
                 malpn <- usingState_ ctx getNegotiatedProtocol
                 let isSameSNI = sessionClientSNI sdata == msni
@@ -806,11 +801,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
                     isSameVersion = chosenVersion == sessionVersion sdata
                     isSameALPN = sessionALPN sdata == malpn
                     is0RTTvalid = isSameVersion && isSameCipher && isSameALPN
-                if isSameKDF &&
-                   isSameSNI &&
-                   isAgeValid age tinfo &&
-                   -- fixme: 2000 milliseconds for RTT + delta
-                   gap < 2000 then do
+                if isSameKDF && isSameSNI && isFresh then do
                     let psk = sessionSecret sdata
                     return (psk, Just (bnd,0::Int,len),is0RTTvalid)
                   else
@@ -869,7 +860,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
               | otherwise = extensions''
         return $ EncryptedExtensions13 extensions
 
-    sendNewSessionTicket masterSecret pendingTranscript = when sendNST $ do
+    sendNewSessionTicket masterSecret pendingTranscript rtt = when sendNST $ do
         usingHState ctx $ do
             updateHandshakeDigest pendingTranscript
             addHandshakeMessage pendingTranscript
@@ -889,7 +880,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
           Nothing                       -> []
         generateSession life psk maxSize = do
             Session (Just sessionId) <- newSession ctx
-            tinfo <- createTLS13TicketInfo life (Left ctx)
+            tinfo <- createTLS13TicketInfo life (Left ctx) (Just rtt)
             sdata <- getSessionData13 ctx usedCipher tinfo maxSize psk
             let mgr = sharedSessionManager $ serverShared sparams
             sessionEstablish mgr sessionId sdata

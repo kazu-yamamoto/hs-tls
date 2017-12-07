@@ -110,7 +110,7 @@ data HandshakeState = HandshakeState
     , hstTLS13RTT0Status     :: !RTT0Status
     , hstTLS13HandshakeMsgs  :: [Handshake13]
     , hstTLS13Secret         :: TLS13Secret
-    , hstRoundTripTime       :: Maybe Word32
+    , hstRoundTripTime       :: Maybe Word64
     } deriving (Show)
 
 type ClientCertRequestData = ([CertificateType],
@@ -227,10 +227,10 @@ setTLS13Secret secret = modify (\hst -> hst { hstTLS13Secret = secret })
 getTLS13Secret :: HandshakeM TLS13Secret
 getTLS13Secret = gets hstTLS13Secret
 
-setRoundTripTime :: Maybe Word32 -> HandshakeM ()
+setRoundTripTime :: Maybe Word64 -> HandshakeM ()
 setRoundTripTime mrtt = modify (\hst -> hst { hstRoundTripTime = mrtt })
 
-getRoundTripTime :: HandshakeM (Maybe Word32)
+getRoundTripTime :: HandshakeM (Maybe Word64)
 getRoundTripTime = gets hstRoundTripTime
 
 setCertReqSent :: Bool -> HandshakeM ()

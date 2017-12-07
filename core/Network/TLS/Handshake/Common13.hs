@@ -139,15 +139,15 @@ replacePSKBinder pskz binder = identities `B.append` binders
 
 ----------------------------------------------------------------
 
-createTLS13TicketInfo :: Word32 -> Either Context Word32 -> IO TLS13TicketInfo
-createTLS13TicketInfo life ecw = do
+createTLS13TicketInfo :: Word32 -> Either Context Word32 -> Maybe Word64 -> IO TLS13TicketInfo
+createTLS13TicketInfo life ecw mrtt = do
     -- Left:  serverSendTime
     -- Right: clientReceiveTime
     bTime <- getCurrentTimeFromBase
     add <- case ecw of
         Left ctx -> B.foldl' (*+) 0 <$> usingState_ ctx (genRandom 4)
         Right ad -> return ad
-    return $ TLS13TicketInfo life add bTime
+    return $ TLS13TicketInfo life add bTime mrtt
   where
     x *+ y = x * 256 + fromIntegral y
 
@@ -170,10 +170,20 @@ getAge tinfo = do
     clientSendTime <- getCurrentTimeFromBase
     return $! fromIntegral (clientSendTime - clientReceiveTime) -- milliseconds
 
-getTripTime :: TLS13TicketInfo -> IO Word32
-getTripTime (TLS13TicketInfo _ _ serverSendTime) = do
+checkFreshness :: TLS13TicketInfo -> Word32 -> IO Bool
+checkFreshness tinfo obfAge = do
     serverReceiveTime <- getCurrentTimeFromBase
-    return $! fromIntegral (serverReceiveTime - serverSendTime) -- milliseconds
+    let freshness = if expectedArrivalTime > serverReceiveTime
+                    then expectedArrivalTime - serverReceiveTime
+                    else serverReceiveTime - expectedArrivalTime
+    let isFresh = freshness < rtt -- fixme: too much tolerant?
+    return $ isAlive && isFresh
+  where
+    serverSendTime = txrxTime tinfo
+    Just rtt = estimatedRTT tinfo
+    age = obfuscatedAgeToAge obfAge tinfo
+    expectedArrivalTime = serverSendTime + rtt + fromIntegral age
+    isAlive = isAgeValid age tinfo
 
 getCurrentTimeFromBase :: IO Word64
 getCurrentTimeFromBase = millisecondsFromBase <$> getCurrentTime
