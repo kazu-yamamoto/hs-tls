@@ -21,6 +21,7 @@ import Network.TLS.Struct
 import Network.TLS.Struct13
 import Network.TLS.Types
 import Network.TLS.Wire
+import Network.TLS.Parameters
 import Data.Time
 
 ----------------------------------------------------------------
@@ -182,6 +183,8 @@ millisecondsFromBase d = fromInteger ms
     ms = truncate (ss * 1000)
     base = UTCTime (fromGregorian 2017 1 1) 0
 
+----------------------------------------------------------------
+
 getSessionData13 :: Context -> Cipher -> TLS13TicketInfo -> ByteString -> IO SessionData
 getSessionData13 ctx usedCipher tinfo psk = do
     ver   <- usingState_ ctx getVersion
@@ -198,3 +201,10 @@ getSessionData13 ctx usedCipher tinfo psk = do
       , sessionTicketInfo  = Just tinfo
       , sessionALPN        = malpn
       }
+
+----------------------------------------------------------------
+
+maxEarlyDataSize :: Context -> Word32
+maxEarlyDataSize ctx = case supportedEarlyData (ctxSupported ctx) of
+                         AcceptEarlyData maxsize -> maxsize
+                         _                       -> 0

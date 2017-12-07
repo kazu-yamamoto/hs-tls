@@ -998,8 +998,3 @@ credentialsFindForSigning13' sigAlg (Credentials l) = find forSigning l
     forSigning cred = case credentialDigitalSignatureAlg cred of
         Nothing  -> False
         Just sig -> sig `signatureCompatible` sigAlg
-
-maxEarlyDataSize :: Context -> Word32
-maxEarlyDataSize ctx = case supportedEarlyData (ctxSupported ctx) of
-                         AcceptEarlyData maxsize -> maxsize
-                         _                       -> 0

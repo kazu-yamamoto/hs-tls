@@ -165,7 +165,11 @@ recvData13 ctx = liftIO $ do
             established <- ctxEstablished ctx
             when (established == EarlyDataAllowed) $ do
                 putStrLn "---- EARLY DATA ----"
-                C8.putStrLn x
+                let maxSize = maxEarlyDataSize ctx
+                if fromIntegral (C8.length x) <= maxSize then do
+                    C8.putStrLn x
+                  else
+                    throwCore $ Error_Protocol ("early data overflow", True, UnexpectedMessage)
             if established == EarlyDataNotAllowed then
                 recvData13 ctx
               else
