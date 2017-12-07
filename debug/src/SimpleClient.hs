@@ -260,7 +260,7 @@ runOn (sStorage, certStore) flags port hostname
                         minfo <- contextGetInformation ctx
                         case minfo of
                             Nothing -> return () -- what should we do?
-                            Just info -> unless (info0RTTAccepted info) $ do
+                            Just info -> unless (infoIsEarlyDataAccepted info) $ do
                                 putStrLn "Resending 0RTT data ..."
                                 sendData ctx $ LC.fromStrict edata
                     _ -> return ()

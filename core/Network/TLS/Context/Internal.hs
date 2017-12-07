@@ -90,7 +90,7 @@ data Information = Information
     , infoMasterSecret :: Maybe ByteString
     , infoClientRandom :: Maybe ClientRandom
     , infoServerRandom :: Maybe ServerRandom
-    , info0RTTAccepted :: Bool
+    , infoIsEarlyDataAccepted :: Bool
     } deriving (Show,Eq)
 
 -- | A TLS Context keep tls specific state, parameters and backend information.
