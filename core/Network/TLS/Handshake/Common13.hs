@@ -5,6 +5,7 @@ module Network.TLS.Handshake.Common13 where
 import qualified Data.ByteArray as BA
 import qualified Data.ByteString as B
 import Network.TLS.Context.Internal
+import Network.TLS.Cipher
 import Network.TLS.Crypto
 import qualified Network.TLS.Crypto.IES as IES
 import Network.TLS.Extension
@@ -180,3 +181,20 @@ millisecondsFromBase d = fromInteger ms
     ss = realToFrac (diffUTCTime d base) :: Double -- xyz.abc second
     ms = truncate (ss * 1000)
     base = UTCTime (fromGregorian 2017 1 1) 0
+
+getSessionData13 :: Context -> Cipher -> TLS13TicketInfo -> ByteString -> IO SessionData
+getSessionData13 ctx usedCipher tinfo psk = do
+    ver   <- usingState_ ctx getVersion
+    malpn <- usingState_ ctx getNegotiatedProtocol
+    sni   <- usingState_ ctx getClientSNI
+    mgrp  <- usingHState ctx getTLS13Group
+    return SessionData {
+        sessionVersion     = ver
+      , sessionCipher      = cipherID usedCipher
+      , sessionCompression = 0
+      , sessionClientSNI   = sni
+      , sessionSecret      = psk
+      , sessionGroup       = mgrp
+      , sessionTicketInfo  = Just tinfo
+      , sessionALPN        = malpn
+      }

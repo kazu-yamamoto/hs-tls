@@ -154,19 +154,8 @@ recvData13 ctx = liftIO $ do
                 usedHash = cipherHash usedCipher
                 hashSize = hashDigestSize usedHash
             let psk = hkdfExpandLabel usedHash resumptionMasterSecret "resumption" nonce hashSize
-            mgrp  <- usingHState ctx getTLS13Group
             tinfo <- createTLS13TicketInfo life $ Right add
-            malpn <- getNegotiatedProtocol ctx
-            let sdata = SessionData
-                        { sessionVersion     = TLS13ID22
-                        , sessionCipher      = cipherID usedCipher
-                        , sessionCompression = 0
-                        , sessionClientSNI   = undefined
-                        , sessionSecret      = psk
-                        , sessionGroup       = mgrp
-                        , sessionTicketInfo  = Just tinfo
-                        , sessionALPN        = malpn
-                        }
+            sdata <- getSessionData13 ctx usedCipher tinfo psk
             sessionEstablish (sharedSessionManager $ ctxShared ctx) ticket sdata
             putStrLn $ "NewSessionTicket received: lifetime = " ++ show life
             recvData13 ctx

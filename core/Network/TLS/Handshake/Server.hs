@@ -883,15 +883,11 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
           Nothing                       -> []
         createSessionTicket life psk = do
             Session (Just sessionId) <- newSession ctx
-            serverName <- usingState_ ctx getClientSNI
-            alpn <- usingState_ ctx getNegotiatedProtocol
             tinfo <- createTLS13TicketInfo life (Left ctx)
-            let sdata = SessionData chosenVersion (cipherID usedCipher) 0 serverName psk (Just grp) (Just tinfo) alpn
-                mgr = sharedSessionManager $ serverShared sparams
+            sdata <- getSessionData13 ctx usedCipher tinfo psk
+            let mgr = sharedSessionManager $ serverShared sparams
             sessionEstablish mgr sessionId sdata
             return (sessionId, ageAdd tinfo)
-          where
-           grp = keyShareEntryGroup clientKeyShare
         createNewSessionTicket life add nonce ticket = NewSessionTicket13 life add nonce ticket extensions
           where
             tedi = extensionEncode $ EarlyDataIndication (Just $ maxEarlyDataSize ctx)
