@@ -10,6 +10,7 @@
 --
 module Network.TLS.Handshake.State
     ( HandshakeState(..)
+    , RTT0Status(..)
     , ClientCertRequestData
     , HandshakeM
     , newEmptyHandshake
@@ -25,8 +26,8 @@ module Network.TLS.Handshake.State
     , getServerECDHParams
     , setDHPrivate
     , getDHPrivate
-    , setECDHPrivate
-    , getECDHPrivate
+    , setGroupPrivate
+    , getGroupPrivate
     -- * cert accessors
     , setClientCertSent
     , getClientCertSent
@@ -40,17 +41,29 @@ module Network.TLS.Handshake.State
     , addHandshakeMessage
     , updateHandshakeDigest
     , getHandshakeMessages
+    , getHandshakeMessagesRev
     , getHandshakeDigest
     -- * master secret
+    , setTLS13MasterSecret
+    , getTLS13MasterSecret
     , setMasterSecret
     , setMasterSecretFromPre
     -- * misc accessor
     , getPendingCipher
     , setServerHelloParameters
+    , setTLS13Group
+    , getTLS13Group
+    , setTLS13HRR
+    , getTLS13HRR
+    , setTLS13RTT0Status
+    , getTLS13RTT0Status
+    , setTLS13HandshakeMsgs
+    , getTLS13HandshakeMsgs
     ) where
 
 import Network.TLS.Util
 import Network.TLS.Struct
+import Network.TLS.Struct13
 import Network.TLS.Record.State
 import Network.TLS.Packet
 import Network.TLS.Crypto
@@ -76,7 +89,7 @@ data HandshakeState = HandshakeState
     , hstServerDHParams      :: !(Maybe ServerDHParams)
     , hstDHPrivate           :: !(Maybe DHPrivate)
     , hstServerECDHParams    :: !(Maybe ServerECDHParams)
-    , hstECDHPrivate         :: !(Maybe GroupPrivate)
+    , hstGroupPrivate         :: !(Maybe GroupPrivate)
     , hstHandshakeDigest     :: !(Either [ByteString] HashCtx)
     , hstHandshakeMessages   :: [ByteString]
     , hstClientCertRequest   :: !(Maybe ClientCertRequestData) -- ^ Set to Just-value when certificate request was received
@@ -87,6 +100,10 @@ data HandshakeState = HandshakeState
     , hstPendingRxState      :: Maybe RecordState
     , hstPendingCipher       :: Maybe Cipher
     , hstPendingCompression  :: Compression
+    , hstTLS13Group          :: Maybe Group
+    , hstTLS13HRR            :: !Bool
+    , hstTLS13RTT0Status     :: !RTT0Status
+    , hstTLS13HandshakeMsgs  :: [Handshake13]
     } deriving (Show)
 
 type ClientCertRequestData = ([CertificateType],
@@ -114,7 +131,7 @@ newEmptyHandshake ver crand = HandshakeState
     , hstServerDHParams      = Nothing
     , hstDHPrivate           = Nothing
     , hstServerECDHParams    = Nothing
-    , hstECDHPrivate         = Nothing
+    , hstGroupPrivate        = Nothing
     , hstHandshakeDigest     = Left []
     , hstHandshakeMessages   = []
     , hstClientCertRequest   = Nothing
@@ -125,6 +142,10 @@ newEmptyHandshake ver crand = HandshakeState
     , hstPendingRxState      = Nothing
     , hstPendingCipher       = Nothing
     , hstPendingCompression  = nullCompression
+    , hstTLS13Group          = Nothing
+    , hstTLS13HRR            = False
+    , hstTLS13RTT0Status     = RTT0None
+    , hstTLS13HandshakeMsgs  = []
     }
 
 runHandshake :: HandshakeState -> HandshakeM a -> (a, HandshakeState)
@@ -144,29 +165,65 @@ getRemotePublicKey = fromJust "remote public key" <$> gets (hksRemotePublicKey .
 getLocalPrivateKey :: HandshakeM PrivKey
 getLocalPrivateKey = fromJust "local private key" <$> gets (hksLocalPrivateKey . hstKeyState)
 
-getServerDHParams :: HandshakeM ServerDHParams
-getServerDHParams = fromJust "server DH params" <$> gets hstServerDHParams
-
-getServerECDHParams :: HandshakeM ServerECDHParams
-getServerECDHParams = fromJust "server ECDH params" <$> gets hstServerECDHParams
-
 setServerDHParams :: ServerDHParams -> HandshakeM ()
 setServerDHParams shp = modify (\hst -> hst { hstServerDHParams = Just shp })
+
+getServerDHParams :: HandshakeM ServerDHParams
+getServerDHParams = fromJust "server DH params" <$> gets hstServerDHParams
 
 setServerECDHParams :: ServerECDHParams -> HandshakeM ()
 setServerECDHParams shp = modify (\hst -> hst { hstServerECDHParams = Just shp })
 
-getDHPrivate :: HandshakeM DHPrivate
-getDHPrivate = fromJust "server DH private" <$> gets hstDHPrivate
-
-getECDHPrivate :: HandshakeM GroupPrivate
-getECDHPrivate = fromJust "server ECDH private" <$> gets hstECDHPrivate
+getServerECDHParams :: HandshakeM ServerECDHParams
+getServerECDHParams = fromJust "server ECDH params" <$> gets hstServerECDHParams
 
 setDHPrivate :: DHPrivate -> HandshakeM ()
 setDHPrivate shp = modify (\hst -> hst { hstDHPrivate = Just shp })
 
-setECDHPrivate :: GroupPrivate -> HandshakeM ()
-setECDHPrivate shp = modify (\hst -> hst { hstECDHPrivate = Just shp })
+getDHPrivate :: HandshakeM DHPrivate
+getDHPrivate = fromJust "server DH private" <$> gets hstDHPrivate
+
+getGroupPrivate :: HandshakeM GroupPrivate
+getGroupPrivate = fromJust "server ECDH private" <$> gets hstGroupPrivate
+
+setGroupPrivate :: GroupPrivate -> HandshakeM ()
+setGroupPrivate shp = modify (\hst -> hst { hstGroupPrivate = Just shp })
+
+setTLS13Group :: Group -> HandshakeM ()
+setTLS13Group g = modify (\hst -> hst { hstTLS13Group = Just g })
+
+getTLS13Group :: HandshakeM (Maybe Group)
+getTLS13Group = gets hstTLS13Group
+
+setTLS13HRR :: Bool -> HandshakeM ()
+setTLS13HRR b = modify (\hst -> hst { hstTLS13HRR = b })
+
+getTLS13HRR :: HandshakeM Bool
+getTLS13HRR = gets hstTLS13HRR
+
+data RTT0Status = RTT0None
+                | RTT0Sent
+                | RTT0Accepted
+                | RTT0Rejected
+                deriving (Show,Eq)
+
+setTLS13RTT0Status :: RTT0Status -> HandshakeM ()
+setTLS13RTT0Status s = modify (\hst -> hst { hstTLS13RTT0Status = s })
+
+getTLS13RTT0Status :: HandshakeM RTT0Status
+getTLS13RTT0Status = gets hstTLS13RTT0Status
+
+setTLS13HandshakeMsgs :: [Handshake13] -> HandshakeM ()
+setTLS13HandshakeMsgs hmsgs = modify (\hst -> hst { hstTLS13HandshakeMsgs = hmsgs })
+
+getTLS13HandshakeMsgs :: HandshakeM [Handshake13]
+getTLS13HandshakeMsgs = gets hstTLS13HandshakeMsgs
+
+setTLS13MasterSecret :: Maybe ByteString -> HandshakeM ()
+setTLS13MasterSecret msecret = modify (\hst -> hst { hstMasterSecret = msecret })
+
+getTLS13MasterSecret :: HandshakeM (Maybe ByteString)
+getTLS13MasterSecret = gets hstMasterSecret
 
 setCertReqSent :: Bool -> HandshakeM ()
 setCertReqSent b = modify (\hst -> hst { hstCertReqSent = b })
@@ -200,6 +257,9 @@ addHandshakeMessage content = modify $ \hs -> hs { hstHandshakeMessages = conten
 
 getHandshakeMessages :: HandshakeM [ByteString]
 getHandshakeMessages = gets (reverse . hstHandshakeMessages)
+
+getHandshakeMessagesRev :: HandshakeM [ByteString]
+getHandshakeMessagesRev = gets hstHandshakeMessages
 
 updateHandshakeDigest :: ByteString -> HandshakeM ()
 updateHandshakeDigest content = modify $ \hs -> hs

@@ -8,6 +8,7 @@ module Connection
     , arbitraryGroups
     , arbitraryKeyUsage
     , arbitraryPairParams
+    , arbitraryPairParams13
     , arbitraryPairParamsWithVersionsAndCiphers
     , arbitraryClientCredential
     , arbitraryRSACredentialWithUsage
@@ -41,7 +42,7 @@ debug :: Bool
 debug = False
 
 knownCiphers :: [Cipher]
-knownCiphers = filter nonECDSA (ciphersuite_all ++ ciphersuite_weak)
+knownCiphers = filter nonTLS13 $ filter nonECDSA (ciphersuite_all ++ ciphersuite_weak)
   where
     ciphersuite_weak = [
         cipher_DHE_DSS_RC4_SHA1
@@ -51,6 +52,13 @@ knownCiphers = filter nonECDSA (ciphersuite_all ++ ciphersuite_weak)
       ]
     -- arbitraryCredentialsOfEachType cannot generate ECDSA
     nonECDSA c = not ("ECDSA" `isInfixOf` cipherName c)
+    nonTLS13 c = cipherMinVer c /= Just TLS13ID18
+
+knownCiphers13 :: [Cipher]
+knownCiphers13 = [
+    cipher_TLS13_AES128GCM_SHA256
+  , cipher_TLS13_AES256GCM_SHA384
+  ]
 
 arbitraryCiphers :: Gen [Cipher]
 arbitraryCiphers = listOf1 $ elements knownCiphers
@@ -64,7 +72,9 @@ arbitraryVersions = sublistOf knownVersions
 knownHashSignatures :: [HashAndSignatureAlgorithm]
 knownHashSignatures = filter nonECDSA availableHashSignatures
   where
-    availableHashSignatures = [(TLS.HashIntrinsic, SignatureRSApssSHA256)
+    availableHashSignatures = [(TLS.HashIntrinsic, SignatureRSApssSHA512)
+                              ,(TLS.HashIntrinsic, SignatureRSApssSHA384)
+                              ,(TLS.HashIntrinsic, SignatureRSApssSHA256)
                               ,(TLS.HashSHA512, SignatureRSA)
                               ,(TLS.HashSHA512, SignatureECDSA)
                               ,(TLS.HashSHA384, SignatureRSA)
@@ -133,6 +143,17 @@ arbitraryECGroupPair = do
     clientGroups <- arbitraryECGroups `suchThat` any (`elem` serverGroups)
     return (clientGroups, serverGroups)
 
+arbitraryPairParams13 :: Gen (ClientParams, ServerParams)
+arbitraryPairParams13 = do
+    let connectVersion = TLS13ID18
+        allowedVersions = [connectVersion]
+        serAllowedVersions = [connectVersion]
+    (clientCiphers', serverCiphers') <- arbitraryCipherPair connectVersion
+    cipher <- elements knownCiphers13
+    let clientCiphers = clientCiphers' ++ [cipher]
+        serverCiphers = serverCiphers' ++ [cipher]
+    arbitraryPairParamsWithVersionsAndCiphers (allowedVersions, serAllowedVersions) (clientCiphers, serverCiphers)
+
 arbitraryHashSignaturePair :: Gen ([HashAndSignatureAlgorithm], [HashAndSignatureAlgorithm])
 arbitraryHashSignaturePair = do
     serverHashSignatures <- shuffle knownHashSignatures
@@ -187,9 +208,10 @@ arbitraryRSACredentialWithUsage usageFlags = do
 -- a Real concurrent session manager would use an MVar and have multiples items.
 oneSessionManager :: IORef (Maybe (SessionID, SessionData)) -> SessionManager
 oneSessionManager ref = SessionManager
-    { sessionResume     = \myId     -> (>>= maybeResume myId) <$> readIORef ref
-    , sessionEstablish  = \myId dat -> writeIORef ref $ Just (myId, dat)
-    , sessionInvalidate = \_        -> return ()
+    { sessionResume         = \myId     -> (>>= maybeResume myId) <$> readIORef ref
+    , sessionResumeOnlyOnce = \myId     -> (>>= maybeResume myId) <$> readIORef ref
+    , sessionEstablish      = \myId dat -> writeIORef ref $ Just (myId, dat)
+    , sessionInvalidate     = \_        -> return ()
     }
   where
     maybeResume myId (sid, sdata)

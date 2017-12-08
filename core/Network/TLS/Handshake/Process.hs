@@ -106,7 +106,7 @@ processClientKeyXchg ctx (CKX_ECDH bytes) = do
     case decodeGroupPublic grp bytes of
       Left _ -> throwCore $ Error_Protocol ("client public key cannot be decoded", True, HandshakeFailure)
       Right clipub -> do
-          srvpri <- usingHState ctx getECDHPrivate
+          srvpri <- usingHState ctx getGroupPrivate
           case groupGetShared clipub srvpri of
               Just premaster -> do
                   rver <- usingState_ ctx getVersion
@@ -123,8 +123,16 @@ processClientFinished ctx fdata = do
     usingState_ ctx $ updateVerifiedData ServerRole fdata
     return ()
 
--- initialize a new Handshake context (initial handshake or renegotiations)
+-- initialize a new Handshake context
 startHandshake :: Context -> Version -> ClientRandom -> IO ()
-startHandshake ctx ver crand =
-    let hs = Just $ newEmptyHandshake ver crand
-    in liftIO $ void $ swapMVar (ctxHandshake ctx) hs
+startHandshake ctx ver crand = do
+    mhst <- getHState ctx
+    let mhst' = case mhst of
+          -- Flesh negotiation
+          Nothing                -> Just $ newEmptyHandshake ver crand
+          Just oldhst
+          -- TLS 1.3 hello retry: Handshake messages etc must be preserved.
+            | hstTLS13HRR oldhst -> Just oldhst
+          -- TLS 1.2 renegotiation: state must be initialized again.
+            | otherwise          -> Just $ newEmptyHandshake ver crand
+    liftIO $ modifyMVar_ (ctxHandshake ctx) $ \_ -> return mhst'

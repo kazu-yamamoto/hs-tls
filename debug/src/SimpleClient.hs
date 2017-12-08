@@ -54,14 +54,18 @@ runTLS debug ioDebug params hostname portNumber f = do
             | otherwise = logging
 
 sessionRef ref = SessionManager
-    { sessionEstablish  = \sid sdata -> writeIORef ref (sid,sdata)
-    , sessionResume     = \sid       -> readIORef ref >>= \(s,d) -> if s == sid then return (Just d) else return Nothing
-    , sessionInvalidate = \_         -> return ()
+    { sessionEstablish      = \sid sdata -> writeIORef ref (sid,sdata)
+    , sessionResume         = \sid       -> readIORef ref >>= \(s,d) -> if s == sid then return (Just d) else return Nothing
+    , sessionResumeOnlyOnce = \sid       -> readIORef ref >>= \(s,d) -> if s == sid then return (Just d) else return Nothing
+    , sessionInvalidate     = \_         -> return ()
     }
 
-getDefaultParams flags host store sStorage certCredsRequest session =
+getDefaultParams flags host store sStorage certCredsRequest session earlyData =
     (defaultParamsClient serverName BC.empty)
-        { clientSupported = def { supportedVersions = supportedVers, supportedCiphers = myCiphers }
+        { clientSupported = def { supportedVersions = supportedVers
+                                , supportedCiphers = myCiphers
+                                , supportedGroups = getGroups flags
+                                }
         , clientWantSessionResume = session
         , clientUseServerNameIndication = not (NoSNI `elem` flags)
         , clientShared = def { sharedSessionManager  = sessionRef sStorage
@@ -75,6 +79,7 @@ getDefaultParams flags host store sStorage certCredsRequest session =
                                                     then (\seed -> putStrLn ("seed: " ++ show (seedToInteger seed)))
                                                     else (\_ -> return ())
                             }
+        , client0RTTData = earlyData
         }
     where
             serverName = foldl f host flags
@@ -113,12 +118,33 @@ getDefaultParams flags host store sStorage certCredsRequest session =
                 | Tls11 `elem` flags = TLS11
                 | Ssl3  `elem` flags = SSL3
                 | Tls10 `elem` flags = TLS10
-                | otherwise          = TLS12
+                | otherwise          = TLS13ID18
             supportedVers
                 | NoVersionDowngrade `elem` flags = [tlsConnectVer]
                 | otherwise = filter (<= tlsConnectVer) allVers
-            allVers = [SSL3, TLS10, TLS11, TLS12]
+            allVers = [SSL3, TLS10, TLS11, TLS12, TLS13ID18]
             validateCert = not (NoValidateCert `elem` flags)
+
+getGroups flags = case getGroup of
+  Nothing -> [X448, X25519, P256]
+  Just gs -> case catMaybes $ map toG $ split ',' gs of
+    []     -> [X448, X25519, P256]
+    groups -> groups
+  where
+    getGroup = foldl f Nothing flags
+      where f _   (Group g)  = Just g
+            f acc _          = acc
+    split _ "" = []
+    split c s = case break (c==) s of
+      ("",r)  -> split c (tail r)
+      (s',"") -> [s']
+      (s',r)  -> s' : split c (tail r)
+    toG "x25519" = Just X25519
+    toG "x448"   = Just X448
+    toG "p256"   = Just P256
+    toG "p384"   = Just P384
+    toG "p521"   = Just P521
+    toG _        = Nothing
 
 data Flag = Verbose | Debug | IODebug | NoValidateCert | Session | Http11
           | Ssl3 | Tls10 | Tls11 | Tls12
@@ -127,6 +153,7 @@ data Flag = Verbose | Debug | IODebug | NoValidateCert | Session | Http11
           | Uri String
           | NoVersionDowngrade
           | UserAgent String
+          | Input String
           | Output String
           | Timeout String
           | BogusCipher String
@@ -138,6 +165,7 @@ data Flag = Verbose | Debug | IODebug | NoValidateCert | Session | Http11
           | ListCiphers
           | DebugSeed String
           | DebugPrintSeed
+          | Group String
           | Help
           deriving (Show,Eq)
 
@@ -147,7 +175,9 @@ options =
     , Option ['d']  ["debug"]   (NoArg Debug) "TLS debug output on stdout"
     , Option []     ["io-debug"] (NoArg IODebug) "TLS IO debug output on stdout"
     , Option ['s']  ["session"] (NoArg Session) "try to resume a session"
+    , Option ['Z']  ["zerortt"]  (ReqArg Input "inpfile") "input for TLS 1.3 0RTT data"
     , Option ['O']  ["output"]  (ReqArg Output "stdout") "output "
+    , Option ['g']  ["group"]  (ReqArg Group "group") "group"
     , Option ['t']  ["timeout"] (ReqArg Timeout "timeout") "timeout in milliseconds (2s by default)"
     , Option []     ["no-validation"] (NoArg NoValidateCert) "disable certificate validation"
     , Option []     ["client-cert"] (ReqArg ClientCert "cert-file:key-file") "add a client certificate to use with the server"
@@ -179,15 +209,19 @@ runOn (sStorage, certStore) flags port hostname
     | BenchRecv `elem` flags = runBench False
     | otherwise              = do
         certCredRequest <- getCredRequest
-        doTLS certCredRequest noSession
+        doTLS certCredRequest noSession Nothing
         when (Session `elem` flags) $ do
+            putStrLn "\nResuming the session..."
             session <- readIORef sStorage
-            doTLS certCredRequest (Just session)
+            earlyData <- case getInput of
+              Nothing -> return Nothing
+              Just i  -> Just <$> B.readFile i
+            doTLS certCredRequest (Just session) earlyData
   where
         runBench isSend =
             runTLS (Debug `elem` flags)
                    (IODebug `elem` flags)
-                   (getDefaultParams flags hostname certStore sStorage Nothing noSession) hostname port $ \ctx -> do
+                   (getDefaultParams flags hostname certStore sStorage Nothing noSession Nothing) hostname port $ \ctx -> do
                 handshake ctx
                 if isSend
                     then loopSendData getBenchAmount ctx
@@ -207,7 +241,7 @@ runOn (sStorage, certStore) flags port hostname
                     d <- recvData ctx
                     loopRecvData (bytes - B.length d) ctx
 
-        doTLS certCredRequest sess = do
+        doTLS certCredRequest sess earlyData = do
             let query = LC.pack (
                         "GET "
                         ++ findURI flags
@@ -218,9 +252,18 @@ runOn (sStorage, certStore) flags port hostname
             out <- maybe (return stdout) (flip openFile AppendMode) getOutput
             runTLS (Debug `elem` flags)
                    (IODebug `elem` flags)
-                   (getDefaultParams flags hostname certStore sStorage certCredRequest sess) hostname port $ \ctx -> do
+                   (getDefaultParams flags hostname certStore sStorage certCredRequest sess earlyData) hostname port $ \ctx -> do
                 handshake ctx
                 when (Verbose `elem` flags) $ printHandshakeInfo ctx
+                case earlyData of
+                    Nothing -> return ()
+                    Just edata -> do
+                        minfo <- contextGetInformation ctx
+                        case minfo of
+                            Nothing -> return () -- what should we do?
+                            Just info -> unless (info0RTTAccepted info) $ do
+                                putStrLn "Resending 0RTT data ..."
+                                sendData ctx $ LC.fromStrict edata
                 sendData ctx $ query
                 loopRecv out ctx
                 bye ctx `catch` \(SomeException e) -> putStrLn $ "bye failed: " ++ show e
@@ -256,6 +299,9 @@ runOn (sStorage, certStore) flags port hostname
         mUserAgent = foldl f Nothing flags
           where f _   (UserAgent ua) = Just ua
                 f acc _              = acc
+        getInput = foldl f Nothing flags
+          where f _   (Input i)  = Just i
+                f acc _          = acc
         getOutput = foldl f Nothing flags
           where f _   (Output o) = Just o
                 f acc _          = acc

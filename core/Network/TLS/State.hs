@@ -53,6 +53,7 @@ module Network.TLS.State
 
 import Network.TLS.Imports
 import Network.TLS.Struct
+import Network.TLS.Struct13
 import Network.TLS.RNG
 import Network.TLS.Types (Role(..))
 import Network.TLS.Wire (GetContinuation)
@@ -74,6 +75,7 @@ data TLSState = TLSState
     , stExtensionALPN       :: Bool  -- RFC 7301
     , stHandshakeRecordCont :: Maybe (GetContinuation (HandshakeType, ByteString))
     , stNegotiatedProtocol  :: Maybe B.ByteString -- ALPN protocol
+    , stHandshakeRecordCont13 :: Maybe (GetContinuation (HandshakeType13, ByteString))
     , stClientALPNSuggest   :: Maybe [B.ByteString]
     , stClientGroupSuggest  :: Maybe [Group]
     , stClientEcPointFormatSuggest :: Maybe [EcPointFormat]
@@ -106,9 +108,10 @@ newTLSState rng clientContext = TLSState
     , stServerVerifiedData  = B.empty
     , stExtensionALPN       = False
     , stHandshakeRecordCont = Nothing
+    , stHandshakeRecordCont13 = Nothing
     , stNegotiatedProtocol  = Nothing
     , stClientALPNSuggest   = Nothing
-    , stClientGroupSuggest = Nothing
+    , stClientGroupSuggest  = Nothing
     , stClientEcPointFormatSuggest = Nothing
     , stClientCertificateChain = Nothing
     , stClientSNI           = Nothing
@@ -135,6 +138,7 @@ finishHandshakeTypeMaterial HandshakeType_ServerKeyXchg   = True
 finishHandshakeTypeMaterial HandshakeType_CertRequest     = True
 finishHandshakeTypeMaterial HandshakeType_CertVerify      = True
 finishHandshakeTypeMaterial HandshakeType_Finished        = True
+finishHandshakeTypeMaterial HandshakeType_HelloRetryRequest = True -- fixme
 
 finishHandshakeMaterial :: Handshake -> Bool
 finishHandshakeMaterial = finishHandshakeTypeMaterial . typeOfHandshake
@@ -150,6 +154,7 @@ certVerifyHandshakeTypeMaterial HandshakeType_ServerKeyXchg   = True
 certVerifyHandshakeTypeMaterial HandshakeType_CertRequest     = True
 certVerifyHandshakeTypeMaterial HandshakeType_CertVerify      = False
 certVerifyHandshakeTypeMaterial HandshakeType_Finished        = False
+certVerifyHandshakeTypeMaterial HandshakeType_HelloRetryRequest = True -- fixme
 
 certVerifyHandshakeMaterial :: Handshake -> Bool
 certVerifyHandshakeMaterial = certVerifyHandshakeTypeMaterial . typeOfHandshake

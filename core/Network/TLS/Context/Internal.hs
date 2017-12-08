@@ -19,6 +19,7 @@ module Network.TLS.Context.Internal
     -- * Context object and accessor
     , Context(..)
     , Hooks(..)
+    , Established(..)
     , ctxEOF
     , ctxHasSSLv2ClientHello
     , ctxDisableSSLv2ClientHello
@@ -52,6 +53,7 @@ module Network.TLS.Context.Internal
     , usingHState
     , getHState
     , getStateRNG
+    , tls13orLater
     ) where
 
 import Network.TLS.Backend
@@ -83,6 +85,7 @@ data Information = Information
     , infoMasterSecret :: Maybe ByteString
     , infoClientRandom :: Maybe ClientRandom
     , infoServerRandom :: Maybe ServerRandom
+    , info0RTTAccepted :: Bool
     } deriving (Show,Eq)
 
 -- | A TLS Context keep tls specific state, parameters and backend information.
@@ -93,7 +96,7 @@ data Context = Context
     , ctxState            :: MVar TLSState
     , ctxMeasurement      :: IORef Measurement
     , ctxEOF_             :: IORef Bool    -- ^ has the handle EOFed or not.
-    , ctxEstablished_     :: IORef Bool    -- ^ has the handshake been done and been successful.
+    , ctxEstablished_     :: IORef Established  -- ^ has the handshake been done and been successful.
     , ctxNeedEmptyPacket  :: IORef Bool    -- ^ empty packet workaround for CBC guessability.
     , ctxSSLv2ClientHello :: IORef Bool    -- ^ enable the reception of compatibility SSLv2 client hello.
                                            -- the flag will be set to false regardless of its initial value
@@ -108,7 +111,14 @@ data Context = Context
     , ctxLockRead         :: MVar ()       -- ^ lock to use for reading data (including updating the state)
     , ctxLockState        :: MVar ()       -- ^ lock used during read/write when receiving and sending packet.
                                            -- it is usually nested in a write or read lock.
+    , ctxPendingActions   :: MVar [ByteString -> IO ()]
     }
+
+data Established = NotEstablished
+                 | EarlyDataAllowed
+                 | EarlyDataNotAllowed
+                 | Established
+                 deriving (Eq, Show)
 
 updateMeasure :: Context -> (Measurement -> Measurement) -> IO ()
 updateMeasure ctx f = do
@@ -135,8 +145,11 @@ contextGetInformation ctx = do
                                        hstServerRandom st)
                            Nothing -> (Nothing, Nothing, Nothing)
     (cipher,comp) <- failOnEitherError $ runRxState ctx $ gets $ \st -> (stCipher st, stCompression st)
+    let accepted = case hstate of
+            Just st -> hstTLS13RTT0Status st == RTT0Accepted
+            Nothing -> False
     case (ver, cipher) of
-        (Just v, Just c) -> return $ Just $ Information v c comp ms cr sr
+        (Just v, Just c) -> return $ Just $ Information v c comp ms cr sr accepted
         _                -> return Nothing
 
 contextSend :: Context -> ByteString -> IO ()
@@ -157,7 +170,7 @@ ctxDisableSSLv2ClientHello ctx = writeIORef (ctxSSLv2ClientHello ctx) False
 setEOF :: Context -> IO ()
 setEOF ctx = writeIORef (ctxEOF_ ctx) True
 
-ctxEstablished :: Context -> IO Bool
+ctxEstablished :: Context -> IO Established
 ctxEstablished ctx = readIORef $ ctxEstablished_ ctx
 
 ctxWithHooks :: Context -> (Hooks -> IO a) -> IO a
@@ -166,7 +179,7 @@ ctxWithHooks ctx f = readIORef (ctxHooks ctx) >>= f
 contextModifyHooks :: Context -> (Hooks -> Hooks) -> IO ()
 contextModifyHooks ctx f = modifyIORef (ctxHooks ctx) f
 
-setEstablished :: Context -> Bool -> IO ()
+setEstablished :: Context -> Established -> IO ()
 setEstablished ctx v = writeIORef (ctxEstablished_ ctx) v
 
 withLog :: Context -> (Logging -> IO ()) -> IO ()
@@ -203,8 +216,11 @@ getHState ctx = liftIO $ readMVar (ctxHandshake ctx)
 runTxState :: Context -> RecordM a -> IO (Either TLSError a)
 runTxState ctx f = do
     ver <- usingState_ ctx (getVersionWithDefault $ maximum $ supportedVersions $ ctxSupported ctx)
+    let ver'
+         | ver >= TLS13ID18 = TLS10
+         | otherwise        = ver
     modifyMVar (ctxTxState ctx) $ \st ->
-        case runRecordM f ver st of
+        case runRecordM f ver' st of
             Left err         -> return (st, Left err)
             Right (a, newSt) -> return (newSt, Right a)
 
@@ -230,3 +246,10 @@ withRWLock ctx f = withReadLock ctx $ withWriteLock ctx f
 
 withStateLock :: Context -> IO a -> IO a
 withStateLock ctx f = withMVar (ctxLockState ctx) (const f)
+
+tls13orLater :: MonadIO m => Context -> m Bool
+tls13orLater ctx = do
+    ev <- liftIO $ usingState ctx $ getVersionWithDefault TLS10 -- fixme
+    return $ case ev of
+               Left  _ -> False
+               Right v -> v >= TLS13ID18

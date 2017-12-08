@@ -204,6 +204,7 @@ data AlertLevel =
 
 data AlertDescription =
       CloseNotify
+    | EndOfEarlyData
     | UnexpectedMessage
     | BadRecordMac
     | DecryptionFailed       -- ^ deprecated alert, should never be sent by compliant implementation
@@ -227,11 +228,14 @@ data AlertDescription =
     | InappropriateFallback -- RFC7507
     | UserCanceled
     | NoRenegotiation
+    | MissingExtension
     | UnsupportedExtension
     | CertificateUnobtainable
     | UnrecognizedName
     | BadCertificateStatusResponse
     | BadCertificateHashValue
+    | UnknownPskIdentity
+    | CertificateRequired
     deriving (Show,Eq)
 
 data HandshakeType =
@@ -245,6 +249,7 @@ data HandshakeType =
     | HandshakeType_CertVerify
     | HandshakeType_ClientKeyXchg
     | HandshakeType_Finished
+    | HandshakeType_HelloRetryRequest
     deriving (Show,Eq)
 
 newtype BigNum = BigNum ByteString
@@ -317,6 +322,8 @@ data Handshake =
     | CertRequest [CertificateType] (Maybe [HashAndSignatureAlgorithm]) [DistinguishedName]
     | CertVerify DigitallySigned
     | Finished FinishedData
+    | ServerHello' !Version !ServerRandom !CipherID [ExtensionRaw] -- TLS 1.3
+    | HelloRetryRequest !Version [ExtensionRaw] -- TLS 1.3
     deriving (Show,Eq)
 
 packetType :: Packet -> ProtocolType
@@ -336,6 +343,8 @@ typeOfHandshake ServerKeyXchg{}           = HandshakeType_ServerKeyXchg
 typeOfHandshake CertRequest{}             = HandshakeType_CertRequest
 typeOfHandshake CertVerify{}              = HandshakeType_CertVerify
 typeOfHandshake Finished{}                = HandshakeType_Finished
+typeOfHandshake ServerHello'{}            = HandshakeType_ServerHello
+typeOfHandshake HelloRetryRequest{}       = HandshakeType_HelloRetryRequest
 
 numericalVer :: Version -> (Word8, Word8)
 numericalVer SSL2  = (2, 0)
@@ -343,6 +352,8 @@ numericalVer SSL3  = (3, 0)
 numericalVer TLS10 = (3, 1)
 numericalVer TLS11 = (3, 2)
 numericalVer TLS12 = (3, 3)
+numericalVer TLS13ID18 = (0x7f, 0x12)
+numericalVer TLS13 = (3, 4)
 
 verOfNum :: (Word8, Word8) -> Maybe Version
 verOfNum (2, 0) = Just SSL2
@@ -350,6 +361,8 @@ verOfNum (3, 0) = Just SSL3
 verOfNum (3, 1) = Just TLS10
 verOfNum (3, 2) = Just TLS11
 verOfNum (3, 3) = Just TLS12
+verOfNum (3, 4) = Just TLS13
+verOfNum (0x7f, 0x12) = Just TLS13ID18
 verOfNum _      = Nothing
 
 class TypeValuable a where
@@ -397,20 +410,22 @@ instance TypeValuable ProtocolType where
     valToType _  = Nothing
 
 instance TypeValuable HandshakeType where
-    valOfType HandshakeType_HelloRequest    = 0
-    valOfType HandshakeType_ClientHello     = 1
-    valOfType HandshakeType_ServerHello     = 2
-    valOfType HandshakeType_Certificate     = 11
-    valOfType HandshakeType_ServerKeyXchg   = 12
-    valOfType HandshakeType_CertRequest     = 13
-    valOfType HandshakeType_ServerHelloDone = 14
-    valOfType HandshakeType_CertVerify      = 15
-    valOfType HandshakeType_ClientKeyXchg   = 16
-    valOfType HandshakeType_Finished        = 20
+    valOfType HandshakeType_HelloRequest      = 0
+    valOfType HandshakeType_ClientHello       = 1
+    valOfType HandshakeType_ServerHello       = 2
+    valOfType HandshakeType_HelloRetryRequest = 6
+    valOfType HandshakeType_Certificate       = 11
+    valOfType HandshakeType_ServerKeyXchg     = 12
+    valOfType HandshakeType_CertRequest       = 13
+    valOfType HandshakeType_ServerHelloDone   = 14
+    valOfType HandshakeType_CertVerify        = 15
+    valOfType HandshakeType_ClientKeyXchg     = 16
+    valOfType HandshakeType_Finished          = 20
 
     valToType 0  = Just HandshakeType_HelloRequest
     valToType 1  = Just HandshakeType_ClientHello
     valToType 2  = Just HandshakeType_ServerHello
+    valToType 6  = Just HandshakeType_HelloRetryRequest
     valToType 11 = Just HandshakeType_Certificate
     valToType 12 = Just HandshakeType_ServerKeyXchg
     valToType 13 = Just HandshakeType_CertRequest
@@ -430,6 +445,7 @@ instance TypeValuable AlertLevel where
 
 instance TypeValuable AlertDescription where
     valOfType CloseNotify            = 0
+    valOfType EndOfEarlyData         = 1
     valOfType UnexpectedMessage      = 10
     valOfType BadRecordMac           = 20
     valOfType DecryptionFailed       = 21
@@ -453,13 +469,17 @@ instance TypeValuable AlertDescription where
     valOfType InappropriateFallback  = 86
     valOfType UserCanceled           = 90
     valOfType NoRenegotiation        = 100
+    valOfType MissingExtension       = 109
     valOfType UnsupportedExtension   = 110
     valOfType CertificateUnobtainable = 111
     valOfType UnrecognizedName        = 112
     valOfType BadCertificateStatusResponse = 113
     valOfType BadCertificateHashValue = 114
+    valOfType UnknownPskIdentity      = 115
+    valOfType CertificateRequired     = 116
 
     valToType 0   = Just CloseNotify
+    valToType 1   = Just EndOfEarlyData
     valToType 10  = Just UnexpectedMessage
     valToType 20  = Just BadRecordMac
     valToType 21  = Just DecryptionFailed
@@ -483,11 +503,14 @@ instance TypeValuable AlertDescription where
     valToType 86  = Just InappropriateFallback
     valToType 90  = Just UserCanceled
     valToType 100 = Just NoRenegotiation
+    valToType 109 = Just MissingExtension
     valToType 110 = Just UnsupportedExtension
     valToType 111 = Just CertificateUnobtainable
     valToType 112 = Just UnrecognizedName
     valToType 113 = Just BadCertificateStatusResponse
     valToType 114 = Just BadCertificateHashValue
+    valToType 115 = Just UnknownPskIdentity
+    valToType 116 = Just CertificateRequired
     valToType _   = Nothing
 
 instance TypeValuable CertificateType where

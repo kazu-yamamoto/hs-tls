@@ -9,21 +9,24 @@ module Network.TLS.Types
     ( Version(..)
     , SessionID
     , SessionData(..)
+    , TLS13TicketInfo(..)
     , CipherID
     , CompressionID
     , Role(..)
     , invertRole
     , Direction(..)
+--    , HostName
     ) where
 
 import Network.TLS.Imports
+import Network.TLS.Crypto.Types (Group)
 
 type HostName = String
 
 -- | Versions known to TLS
 --
 -- SSL2 is just defined, but this version is and will not be supported.
-data Version = SSL2 | SSL3 | TLS10 | TLS11 | TLS12 deriving (Show, Eq, Ord, Bounded)
+data Version = SSL2 | SSL3 | TLS10 | TLS11 | TLS12 | TLS13ID18 | TLS13 deriving (Show, Eq, Ord, Bounded)
 
 -- | A session ID
 type SessionID = ByteString
@@ -35,6 +38,14 @@ data SessionData = SessionData
     , sessionCompression :: CompressionID
     , sessionClientSNI   :: Maybe HostName
     , sessionSecret      :: ByteString
+    , sessionGroup       :: Maybe Group
+    , sessionTicketInfo  :: Maybe TLS13TicketInfo
+    } deriving (Show,Eq)
+
+data TLS13TicketInfo = TLS13TicketInfo
+    { lifetime :: Word32 -- NewSessionTicket.ticket_lifetime in seconds
+    , ageAdd   :: Word32 -- NewSessionTicket.ticket_age_add
+    , txrxTime :: Word64 -- serverSendTime or clientReceiveTime in milliseconds
     } deriving (Show,Eq)
 
 -- | Cipher identification
