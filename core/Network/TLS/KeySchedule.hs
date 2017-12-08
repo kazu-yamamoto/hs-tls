@@ -17,10 +17,10 @@ import Network.TLS.Imports
 ----------------------------------------------------------------
 
 hkdfExtract :: Hash -> ByteString -> ByteString -> ByteString
-hkdfExtract SHA1   salt ikm = convert ((extract salt ikm) :: PRK H.SHA1)
-hkdfExtract SHA256 salt ikm = convert ((extract salt ikm) :: PRK H.SHA256)
-hkdfExtract SHA384 salt ikm = convert ((extract salt ikm) :: PRK H.SHA384)
-hkdfExtract SHA512 salt ikm = convert ((extract salt ikm) :: PRK H.SHA512)
+hkdfExtract SHA1   salt ikm = convert (extract salt ikm :: PRK H.SHA1)
+hkdfExtract SHA256 salt ikm = convert (extract salt ikm :: PRK H.SHA256)
+hkdfExtract SHA384 salt ikm = convert (extract salt ikm :: PRK H.SHA384)
+hkdfExtract SHA512 salt ikm = convert (extract salt ikm :: PRK H.SHA512)
 hkdfExtract _ _ _           = error "hkdfExtract: unsupported hash"
 
 ----------------------------------------------------------------
@@ -47,10 +47,10 @@ hkdfExpandLabel h secret label ctx outlen = expand' h secret hkdfLabel outlen
         putOpaque8 ctx
 
 expand' :: Hash -> ByteString -> ByteString -> Int -> ByteString
-expand' SHA1   secret label len = expand ((extractSkip secret) :: PRK H.SHA1)   label len
-expand' SHA256 secret label len = expand ((extractSkip secret) :: PRK H.SHA256) label len
-expand' SHA384 secret label len = expand ((extractSkip secret) :: PRK H.SHA384) label len
-expand' SHA512 secret label len = expand ((extractSkip secret) :: PRK H.SHA512) label len
+expand' SHA1   secret label len = expand (extractSkip secret :: PRK H.SHA1)   label len
+expand' SHA256 secret label len = expand (extractSkip secret :: PRK H.SHA256) label len
+expand' SHA384 secret label len = expand (extractSkip secret :: PRK H.SHA384) label len
+expand' SHA512 secret label len = expand (extractSkip secret :: PRK H.SHA512) label len
 expand' _ _ _ _ = error "expand'"
 
 ----------------------------------------------------------------

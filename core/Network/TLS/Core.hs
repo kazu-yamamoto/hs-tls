@@ -138,7 +138,7 @@ recvData13 ctx = liftIO $ do
         process (Alert13 [(AlertLevel_Fatal, desc)]) = do
             setEOF ctx
             E.throwIO (Terminated True ("received fatal error: " ++ show desc) (Error_Protocol ("remote side fatal error", True, desc)))
-        process (Handshake13 [ClientHello13 _ _ _ _ _]) = do
+        process (Handshake13 [ClientHello13{}]) = do
             let reason = "Client hello is not allowed"
             terminate (Error_Misc reason) AlertLevel_Fatal UnexpectedMessage reason
         process (Handshake13 [EndOfEarlyData13]) = do

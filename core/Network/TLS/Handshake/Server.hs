@@ -765,7 +765,7 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
               setRxState ctx usedHash usedCipher clientApplicationTrafficSecret0
               sendNewSessionTicket masterSecret pendingTranscript rtt
           | otherwise = throwCore $ Error_Protocol ("cannot verify finished", True, HandshakeFailure)
-        endOfEarlyDataAction = \_ -> do
+        endOfEarlyDataAction _ =
             setRxState ctx usedHash usedCipher clientHandshakeTrafficSecret
     if rtt0OK then do
         setPendingActions ctx [endOfEarlyDataAction, finishedAction]

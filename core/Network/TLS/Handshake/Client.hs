@@ -225,7 +225,7 @@ handshakeClient' cparams ctx groups mcrand = do
                       let ech = encodeHandshake ch
                       binder <- makePSKBinder ctx earlySecret usedHash (siz + 3) (Just ech)
                       let exts' = init exts ++ [adjust (last exts)]
-                          adjust (ExtensionRaw eid withoutBinders) = (ExtensionRaw eid withBinders)
+                          adjust (ExtensionRaw eid withoutBinders) = ExtensionRaw eid withBinders
                             where
                               withBinders = replacePSKBinder withoutBinders binder
                       return exts'
@@ -491,7 +491,7 @@ onServerHello ctx cparams sentExts (ServerHello rver serverRan serverSession cip
     -- if server returns extensions that we didn't request, fail.
     let checkExt (ExtensionRaw i _)
           | i == extensionID_Cookie = False -- for HRR
-          | otherwise               = notElem i sentExts
+          | otherwise               = i `notElem` sentExts
     unless (null $ filter checkExt exts) $
         throwCore $ Error_Protocol ("spurious extensions received", True, UnsupportedExtension)
 
@@ -512,7 +512,7 @@ onServerHello ctx cparams sentExts (ServerHello rver serverRan serverSession cip
     setALPN ctx exts
 
     ver <- usingState_ ctx getVersion
-    case find ((==) ver) (supportedVersions $ ctxSupported ctx) of
+    case find (== ver) (supportedVersions $ ctxSupported ctx) of
         Nothing -> throwCore $ Error_Protocol ("server version " ++ show ver ++ " is not supported", True, ProtocolVersion)
         Just _  -> return ()
     if ver == TLS13ID22 then do
@@ -805,7 +805,7 @@ setALPN ctx exts = case extensionLookup extensionID_ApplicationLayerProtocolNego
     Just (ApplicationLayerProtocolNegotiation [proto]) -> usingState_ ctx $ do
         mprotos <- getClientALPNSuggest
         case mprotos of
-            Just protos -> when (elem proto protos) $ do
+            Just protos -> when (proto `elem` protos) $ do
                 setExtensionALPN True
                 setNegotiatedProtocol proto
             _ -> return ()

@@ -12,8 +12,8 @@ data Packet13 =
     | AppData13 ByteString
     deriving (Show,Eq)
 
-data CertificateEntry13 = CertificateEntry13 [ExtensionRaw]
-    deriving (Show,Eq)
+newtype CertificateEntry13 = CertificateEntry13 [ExtensionRaw]
+                           deriving (Show,Eq)
 
 data Handshake13 =
       ClientHello13 !Version !ClientRandom !Session ![CipherID] [ExtensionRaw]
@@ -42,16 +42,16 @@ data HandshakeType13 =
     deriving (Show,Eq)
 
 typeOfHandshake13 :: Handshake13 -> HandshakeType13
-typeOfHandshake13 (ClientHello13 {})         = HandshakeType_ClientHello13
-typeOfHandshake13 (ServerHello13 {})         = HandshakeType_ServerHello13
-typeOfHandshake13 (EndOfEarlyData13 {})      = HandshakeType_EndOfEarlyData13
-typeOfHandshake13 (NewSessionTicket13 {})    = HandshakeType_NewSessionTicket13
-typeOfHandshake13 (EncryptedExtensions13 {}) = HandshakeType_EncryptedExtensions13
-typeOfHandshake13 (CertRequest13 {})         = HandshakeType_CertRequest13
-typeOfHandshake13 (Certificate13 {})         = HandshakeType_Certificate13
-typeOfHandshake13 (CertVerify13 {})          = HandshakeType_CertVerify13
-typeOfHandshake13 (Finished13 {})            = HandshakeType_Finished13
-typeOfHandshake13 (KeyUpdate13 {})           = HandshakeType_KeyUpdate13
+typeOfHandshake13 ClientHello13{}         = HandshakeType_ClientHello13
+typeOfHandshake13 ServerHello13{}         = HandshakeType_ServerHello13
+typeOfHandshake13 EndOfEarlyData13{}      = HandshakeType_EndOfEarlyData13
+typeOfHandshake13 NewSessionTicket13{}    = HandshakeType_NewSessionTicket13
+typeOfHandshake13 EncryptedExtensions13{} = HandshakeType_EncryptedExtensions13
+typeOfHandshake13 CertRequest13{}         = HandshakeType_CertRequest13
+typeOfHandshake13 Certificate13{}         = HandshakeType_Certificate13
+typeOfHandshake13 CertVerify13{}          = HandshakeType_CertVerify13
+typeOfHandshake13 Finished13{}            = HandshakeType_Finished13
+typeOfHandshake13 KeyUpdate13{}           = HandshakeType_KeyUpdate13
 
 instance TypeValuable HandshakeType13 where
   valOfType HandshakeType_ClientHello13         = 1

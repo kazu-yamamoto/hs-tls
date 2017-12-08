@@ -480,7 +480,7 @@ instance Extension PreSharedKey where
             return (len, binder)
     extensionDecode _ = fail "decoding PreShareKey"
 
-data EarlyDataIndication = EarlyDataIndication (Maybe Word32) deriving (Eq, Show)
+newtype EarlyDataIndication = EarlyDataIndication (Maybe Word32) deriving (Eq, Show)
 instance Extension EarlyDataIndication where
     extensionID _ = extensionID_EarlyData
     extensionEncode (EarlyDataIndication Nothing)   = runPut $ putBytes B.empty
