@@ -208,9 +208,9 @@ defaultSupported = Supported
     { supportedVersions       = [TLS12,TLS11,TLS10]
     , supportedCiphers        = []
     , supportedCompressions   = [nullCompression]
-    , supportedHashSignatures = [ (HashIntrinsic,     SignatureRSApssSHA256)
-                                , (HashIntrinsic,     SignatureRSApssSHA384)
-                                , (HashIntrinsic,     SignatureRSApssSHA512)
+    , supportedHashSignatures = [ (HashIntrinsic,     SignatureRSApssRSAeSHA256)
+                                , (HashIntrinsic,     SignatureRSApssRSAeSHA384)
+                                , (HashIntrinsic,     SignatureRSApssRSAeSHA512)
                                 , (Struct.HashSHA512, SignatureRSA)
                                 , (Struct.HashSHA512, SignatureECDSA)
                                 , (Struct.HashSHA384, SignatureRSA)
