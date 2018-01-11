@@ -115,6 +115,9 @@ data SignatureAlgorithm =
     | SignatureRSApssRSAeSHA512
     | SignatureEd25519
     | SignatureEd448
+    | SignatureRSApsspssSHA256
+    | SignatureRSApsspssSHA384
+    | SignatureRSApsspssSHA512
     | SignatureOther Word8
     deriving (Show,Eq)
 
@@ -544,27 +547,33 @@ instance TypeValuable HashAlgorithm where
     valToType i = Just (HashOther i)
 
 instance TypeValuable SignatureAlgorithm where
-    valOfType SignatureAnonymous        = 0
-    valOfType SignatureRSA              = 1
-    valOfType SignatureDSS              = 2
-    valOfType SignatureECDSA            = 3
-    valOfType SignatureRSApssRSAeSHA256 = 4
-    valOfType SignatureRSApssRSAeSHA384 = 5
-    valOfType SignatureRSApssRSAeSHA512 = 6
-    valOfType SignatureEd25519          = 7
-    valOfType SignatureEd448            = 8
-    valOfType (SignatureOther i)        = i
+    valOfType SignatureAnonymous        =  0
+    valOfType SignatureRSA              =  1
+    valOfType SignatureDSS              =  2
+    valOfType SignatureECDSA            =  3
+    valOfType SignatureRSApssRSAeSHA256 =  4
+    valOfType SignatureRSApssRSAeSHA384 =  5
+    valOfType SignatureRSApssRSAeSHA512 =  6
+    valOfType SignatureEd25519          =  7
+    valOfType SignatureEd448            =  8
+    valOfType SignatureRSApsspssSHA256  =  9
+    valOfType SignatureRSApsspssSHA384  = 10
+    valOfType SignatureRSApsspssSHA512  = 11
+    valOfType (SignatureOther i)        =  i
 
-    valToType 0 = Just SignatureAnonymous
-    valToType 1 = Just SignatureRSA
-    valToType 2 = Just SignatureDSS
-    valToType 3 = Just SignatureECDSA
-    valToType 4 = Just SignatureRSApssRSAeSHA256
-    valToType 5 = Just SignatureRSApssRSAeSHA384
-    valToType 6 = Just SignatureRSApssRSAeSHA512
-    valToType 7 = Just SignatureEd25519
-    valToType 8 = Just SignatureEd448
-    valToType i = Just (SignatureOther i)
+    valToType  0 = Just SignatureAnonymous
+    valToType  1 = Just SignatureRSA
+    valToType  2 = Just SignatureDSS
+    valToType  3 = Just SignatureECDSA
+    valToType  4 = Just SignatureRSApssRSAeSHA256
+    valToType  5 = Just SignatureRSApssRSAeSHA384
+    valToType  6 = Just SignatureRSApssRSAeSHA512
+    valToType  7 = Just SignatureEd25519
+    valToType  8 = Just SignatureEd448
+    valToType  9 = Just SignatureRSApsspssSHA256
+    valToType 10 = Just SignatureRSApsspssSHA384
+    valToType 11 = Just SignatureRSApsspssSHA512
+    valToType  i = Just (SignatureOther i)
 
 instance EnumSafe16 Group where
     fromEnumSafe16 P256      =  23
