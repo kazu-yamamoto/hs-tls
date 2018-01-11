@@ -222,7 +222,7 @@ runTxState :: Context -> RecordM a -> IO (Either TLSError a)
 runTxState ctx f = do
     ver <- usingState_ ctx (getVersionWithDefault $ maximum $ supportedVersions $ ctxSupported ctx)
     let ver'
-         | ver >= TLS13ID22 = TLS12 -- This is used in ClientHello
+         | ver >= TLS13ID23 = TLS12 -- This is used in ClientHello
          | otherwise        = ver
     modifyMVar (ctxTxState ctx) $ \st ->
         case runRecordM f ver' st of
@@ -257,7 +257,7 @@ tls13orLater ctx = do
     ev <- liftIO $ usingState ctx $ getVersionWithDefault TLS10 -- fixme
     return $ case ev of
                Left  _ -> False
-               Right v -> v >= TLS13ID22
+               Right v -> v >= TLS13ID23
 
 exporter :: Context -> ByteString -> ByteString -> Int -> IO (Maybe ByteString)
 exporter ctx label context outlen = do
