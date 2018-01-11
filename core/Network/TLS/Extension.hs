@@ -21,12 +21,16 @@ module Network.TLS.Extension
     , extensionID_EcPointFormats
     , extensionID_Heartbeat
     , extensionID_SignatureAlgorithms
-    , extensionID_KeyShare
     , extensionID_PreSharedKey
     , extensionID_EarlyData
     , extensionID_SupportedVersions
     , extensionID_Cookie
     , extensionID_PskKeyExchangeModes
+    , extensionID_CertificateAuthorities
+    , extensionID_OidFilters
+    , extensionID_PostHandshakeAuth
+    , extensionID_SignatureAlgorithmsCert
+    , extensionID_KeyShare
     -- all implemented extensions
     , ServerNameType(..)
     , ServerName(..)
@@ -42,6 +46,7 @@ module Network.TLS.Extension
     , HeartBeat(..)
     , HeartBeatMode(..)
     , SignatureAlgorithms(..)
+    , SignatureAlgorithmsCert
     , SupportedVersions(..)
     , KeyShare(..)
     , KeyShareEntry(..)
@@ -93,12 +98,16 @@ extensionID_ServerName
   , extensionID_EncryptThenMAC
   , extensionID_ExtendedMasterSecret
   , extensionID_SessionTicket
-  , extensionID_KeyShare
   , extensionID_PreSharedKey
   , extensionID_EarlyData
   , extensionID_SupportedVersions
   , extensionID_Cookie
   , extensionID_PskKeyExchangeModes
+  , extensionID_CertificateAuthorities
+  , extensionID_OidFilters
+  , extensionID_PostHandshakeAuth
+  , extensionID_SignatureAlgorithmsCert
+  , extensionID_KeyShare
   , extensionID_SecureRenegotiation :: ExtensionID
 extensionID_ServerName                          = 0x0 -- RFC6066
 extensionID_MaxFragmentLength                   = 0x1 -- RFC6066
@@ -125,12 +134,18 @@ extensionID_Padding                             = 0x15 -- draft-agl-tls-padding.
 extensionID_EncryptThenMAC                      = 0x16 -- RFC7366
 extensionID_ExtendedMasterSecret                = 0x17 -- draft-ietf-tls-session-hash. expires 2015-09-26
 extensionID_SessionTicket                       = 0x23 -- RFC4507
-extensionID_KeyShare                            = 0x28 -- TLS 1.3
+-- Reserved                                       0x28 -- TLS 1.3
 extensionID_PreSharedKey                        = 0x29 -- TLS 1.3
 extensionID_EarlyData                           = 0x2a -- TLS 1.3
 extensionID_SupportedVersions                   = 0x2b -- TLS 1.3
 extensionID_Cookie                              = 0x2c -- TLS 1.3
 extensionID_PskKeyExchangeModes                 = 0x2d -- TLS 1.3
+-- Reserved                                       0x2e -- TLS 1.3
+extensionID_CertificateAuthorities              = 0x2f -- TLS 1.3
+extensionID_OidFilters                          = 0x30 -- TLS 1.3
+extensionID_PostHandshakeAuth                   = 0x31 -- TLS 1.3
+extensionID_SignatureAlgorithmsCert             = 0x32 -- TLS 1.3
+extensionID_KeyShare                            = 0x33 -- TLS 1.3
 extensionID_SecureRenegotiation                 = 0xff01 -- RFC5746
 
 definedExtensions :: [ExtensionID]
@@ -341,6 +356,8 @@ instance Extension SignatureAlgorithms where
         runGetMaybe $ do
             len <- getWord16
             SignatureAlgorithms <$> getList (fromIntegral len) (getSignatureHashAlgorithm >>= \sh -> return (2, sh))
+
+type SignatureAlgorithmsCert = SignatureAlgorithms
 
 data SupportedVersions =
     SupportedVersionsClientHello [Version]
