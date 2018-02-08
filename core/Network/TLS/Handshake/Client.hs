@@ -776,6 +776,7 @@ recvHandshake13 ctx = do
         [] -> do
             epkt <- recvPacket13 ctx
             case epkt of
+                Right (Handshake13 [])     -> recvHandshake13 ctx
                 Right (Handshake13 (h:hs)) -> do
                     usingHState ctx $ setTLS13HandshakeMsgs hs
                     return h
