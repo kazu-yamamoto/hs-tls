@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-warnings-deprecations #-}
 
-import Control.Exception
+import Control.Exception (SomeException(..))
 import qualified Control.Exception as E
 import Crypto.Random
 import qualified Data.ByteString as B
@@ -29,16 +29,11 @@ defaultTimeout = 2000
 
 bogusCipher cid = cipher_AES128_SHA1 { cipherID = cid }
 
-runTLS debug ioDebug params hostname portNumber f = do
-    ai <- makeAddrInfo (Just hostname) portNumber
-    sock <- socket (addrFamily ai) (addrSocketType ai) (addrProtocol ai)
-    let sockaddr = addrAddress ai
-    E.catch (connect sock sockaddr)
-          (\(SomeException e) -> close sock >> error ("cannot open socket " ++ show sockaddr ++ " " ++ show e))
-    ctx <- contextNew sock params
-    contextHookSetLogging ctx getLogging
-    () <- f ctx
-    close sock
+runTLS debug ioDebug params hostname portNumber f =
+    E.bracket setup teardown $ \sock -> do
+        ctx <- contextNew sock params
+        contextHookSetLogging ctx getLogging
+        f ctx
   where getLogging = ioLogging $ packetLogging $ def
         packetLogging logging
             | debug = logging { loggingPacketSent = putStrLn . ("debug: >> " ++)
@@ -52,6 +47,13 @@ runTLS debug ioDebug params hostname portNumber f = do
                                     mapM_ putStrLn $ hexdump "<<" body
                                 }
             | otherwise = logging
+        setup = do
+            ai <- makeAddrInfo (Just hostname) portNumber
+            sock <- socket (addrFamily ai) (addrSocketType ai) (addrProtocol ai)
+            let sockaddr = addrAddress ai
+            connect sock sockaddr
+            return sock
+        teardown sock = close sock
 
 sessionRef ref = SessionManager
     { sessionEstablish      = \sid sdata -> writeIORef ref (sid,sdata)
@@ -209,14 +211,14 @@ runOn (sStorage, certStore) flags port hostname
     | BenchRecv `elem` flags = runBench False
     | otherwise              = do
         certCredRequest <- getCredRequest
-        doTLS certCredRequest noSession NoEarlyData
+        doTLS certCredRequest noSession NoEarlyData `E.catch` \(SomeException e) -> print e
         when (Session `elem` flags) $ do
             putStrLn "\nResuming the session..."
             session <- readIORef sStorage
             earlyData <- case getInput of
               Nothing -> return NoEarlyData
               Just i  -> SendEarlyData <$> B.readFile i
-            doTLS certCredRequest (Just session) earlyData
+            doTLS certCredRequest (Just session) earlyData `E.catch` \(SomeException e) -> print e
   where
         runBench isSend =
             runTLS (Debug `elem` flags)
@@ -241,7 +243,7 @@ runOn (sStorage, certStore) flags port hostname
                     d <- recvData ctx
                     loopRecvData (bytes - B.length d) ctx
 
-        doTLS certCredRequest sess earlyData = do
+        doTLS certCredRequest sess earlyData = E.bracket setup teardown $ \out -> do
             let query = LC.pack (
                         "GET "
                         ++ findURI flags
@@ -249,7 +251,6 @@ runOn (sStorage, certStore) flags port hostname
                         ++ userAgent
                         ++ "\r\n\r\n")
             when (Verbose `elem` flags) (putStrLn "sending query:" >> LC.putStrLn query >> putStrLn "")
-            out <- maybe (return stdout) (flip openFile AppendMode) getOutput
             runTLS (Debug `elem` flags)
                    (IODebug `elem` flags)
                    (getDefaultParams flags hostname certStore sStorage certCredRequest sess earlyData) hostname port $ \ctx -> do
@@ -266,9 +267,10 @@ runOn (sStorage, certStore) flags port hostname
                     _ -> return ()
                 sendData ctx $ query
                 loopRecv out ctx
-                bye ctx `catch` \(SomeException e) -> putStrLn $ "bye failed: " ++ show e
+                bye ctx `E.catch` \(SomeException e) -> putStrLn $ "bye failed: " ++ show e
                 return ()
-            when (isJust getOutput) $ hClose out
+        setup = maybe (return stdout) (flip openFile AppendMode) getOutput
+        teardown out = when (isJust getOutput) $ hClose out
         loopRecv out ctx = do
             d <- timeout (timeoutMs * 1000) (recvData ctx) -- 2s per recv
             case d of
