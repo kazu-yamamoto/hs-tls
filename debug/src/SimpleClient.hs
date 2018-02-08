@@ -136,6 +136,7 @@ getGroups flags = case getGroup of
     getGroup = foldl f Nothing flags
       where f _   (Group g)  = Just g
             f acc _          = acc
+    split :: Char -> String -> [String]
     split _ "" = []
     split c s = case break (c==) s of
       ("",r)  -> split c (tail r)
