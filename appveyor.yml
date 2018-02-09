@@ -1,0 +1,29 @@
+environment:
+  stack_root: 'C:\stack'
+  matrix:
+    - stack_lts: "lts-9.18"
+
+matrix:
+  allow_failures:
+    - stack_lts: "nightly"
+
+install:
+- set PATH=C:\Program Files\Git\mingw64\bin;%PATH%
+- curl -sS -ostack.zip -L --insecure http://www.stackage.org/stack/windows-x86_64
+- 7z x stack.zip stack.exe
+- stack --no-terminal setup --resolver %stack_lts% > nul
+
+build_script:
+- stack --no-terminal build --resolver %stack_lts% --reconfigure
+- stack --local-bin-path . install tls-debug
+
+test_script:
+# Run all test suites except doctests, because that one assumes
+# cabal-install. TODO reenable it:
+- stack --no-terminal test --resolver %stack_lts% --reconfigure
+
+deploy: off
+
+artifacts:
+  - path: tls-simpleclient.exe
+    name: Interoperability
