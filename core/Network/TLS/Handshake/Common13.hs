@@ -176,7 +176,11 @@ checkFreshness tinfo obfAge = do
     let freshness = if expectedArrivalTime > serverReceiveTime
                     then expectedArrivalTime - serverReceiveTime
                     else serverReceiveTime - expectedArrivalTime
-    let isFresh = freshness < rtt -- fixme: too much tolerant?
+    -- fixme: tolerance
+    -- rtt is too large?
+    -- 100 is good enough?
+    let tolerance = max 100 rtt
+        isFresh = freshness < tolerance
     return $ isAlive && isFresh
   where
     serverSendTime = txrxTime tinfo
