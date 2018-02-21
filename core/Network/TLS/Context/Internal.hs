@@ -221,8 +221,12 @@ getHState ctx = liftIO $ readMVar (ctxHandshake ctx)
 runTxState :: Context -> RecordM a -> IO (Either TLSError a)
 runTxState ctx f = do
     ver <- usingState_ ctx (getVersionWithDefault $ maximum $ supportedVersions $ ctxSupported ctx)
+    hrr <- usingState_ ctx getTLS13HRR
+    -- For TLS 1.3, ver' is only used in ClientHello.
+    -- The record version of the first ClientHello SHOULD be TLS 1.0.
+    -- The record version of the second ClientHello MUST be TLS 1.2.
     let ver'
-         | ver >= TLS13ID23 = TLS12 -- This is used in ClientHello
+         | ver >= TLS13ID23 = if hrr then TLS12 else TLS10
          | otherwise        = ver
     modifyMVar (ctxTxState ctx) $ \st ->
         case runRecordM f ver' st of
