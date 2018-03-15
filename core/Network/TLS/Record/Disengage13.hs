@@ -62,7 +62,8 @@ decryptData econtent tst = decryptOf (cstKey cst)
                 ivlen = B.length iv
                 sqnc = B.pack (replicate (ivlen - 8) 0) `B.append` encodedSeq
                 nonce = B.pack $ B.zipWith xor iv sqnc
-                (content, authTag2) = decryptF nonce econtent' ""
+                additional = "\23\3\3" `B.append` encodeWord16 (fromIntegral econtentLen)
+                (content, authTag2) = decryptF nonce econtent' additional
 
             when (AuthTag (B.convert authTag) /= authTag2) $
                 throwError $ Error_Protocol ("bad record mac", True, BadRecordMac)

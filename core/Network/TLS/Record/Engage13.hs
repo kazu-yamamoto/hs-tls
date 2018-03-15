@@ -25,6 +25,7 @@ import Network.TLS.Wire
 import Network.TLS.Struct (valOfType)
 import Network.TLS.Struct13
 import Network.TLS.Imports
+import Network.TLS.Util
 import qualified Data.ByteString as B
 import qualified Data.ByteArray as B (convert)
 
@@ -46,7 +47,8 @@ innerPlaintext ct bytes = runPut $ do
 
 encryptContent :: ByteString -> RecordM ByteString
 encryptContent content = do
-    cst  <- stCryptState <$> get
+    st <- get
+    let cst = stCryptState st
     case cstKey cst of
         BulkStateBlock _  -> error "encryptContent"
         BulkStateStream _ -> error "encryptContent"
@@ -57,7 +59,12 @@ encryptContent content = do
                 ivlen = B.length iv
                 sqnc = B.pack (replicate (ivlen - 8) 0) `B.append` encodedSeq
                 nonce = B.pack $ B.zipWith xor iv sqnc
-                (e, AuthTag authtag) = encryptF nonce content ""
+                bulk = cipherBulk $ fromJust "cipher" $ stCipher st
+                authTagLen = bulkAuthTagLen bulk
+                plainLen = B.length content
+                econtentLen = plainLen + authTagLen
+                additional = "\23\3\3" `B.append` encodeWord16 (fromIntegral econtentLen)
+                (e, AuthTag authtag) = encryptF nonce content additional
                 econtent = e `B.append` B.convert authtag
             modify incrRecordState
             return econtent
