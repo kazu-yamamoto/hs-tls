@@ -33,7 +33,6 @@ import Network.TLS.Types
 import Network.TLS.X509
 import qualified Data.ByteString as B
 import Data.X509 (ExtKeyUsageFlag(..))
-import Data.Typeable
 
 import Control.Monad.State.Strict
 import Control.Exception (SomeException)
