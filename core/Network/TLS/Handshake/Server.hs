@@ -118,7 +118,7 @@ handshakeServerWith sparams ctx clientHello@(ClientHello clientVersion _ clientS
             _                                        -> []
         serverVersions = supportedVersions $ ctxSupported ctx
         mver
-          | (TLS13ID26 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
+          | (TLS13ID28 `elem` serverVersions) && clientVersion == TLS12 && clientVersions /= [] =
                 findHighestVersionFrom13 clientVersions serverVersions
           | otherwise = findHighestVersionFrom clientVersion serverVersions
 

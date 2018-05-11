@@ -226,7 +226,7 @@ runTxState ctx f = do
     -- The record version of the first ClientHello SHOULD be TLS 1.0.
     -- The record version of the second ClientHello MUST be TLS 1.2.
     let ver'
-         | ver >= TLS13ID26 = if hrr then TLS12 else TLS10
+         | ver >= TLS13ID28 = if hrr then TLS12 else TLS10
          | otherwise        = ver
     modifyMVar (ctxTxState ctx) $ \st ->
         case runRecordM f ver' st of
@@ -261,7 +261,7 @@ tls13orLater ctx = do
     ev <- liftIO $ usingState ctx $ getVersionWithDefault TLS10 -- fixme
     return $ case ev of
                Left  _ -> False
-               Right v -> v >= TLS13ID26
+               Right v -> v >= TLS13ID28
 
 exporter :: Context -> ByteString -> ByteString -> Int -> IO (Maybe ByteString)
 exporter ctx label context outlen = do

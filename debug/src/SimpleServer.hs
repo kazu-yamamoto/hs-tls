@@ -118,11 +118,11 @@ getDefaultParams flags store smgr cred rtt0accept = do
                 | Tls11 `elem` flags = TLS11
                 | Ssl3  `elem` flags = SSL3
                 | Tls10 `elem` flags = TLS10
-                | otherwise          = TLS13ID26
+                | otherwise          = TLS13ID28
             supportedVers
                 | NoVersionDowngrade `elem` flags = [tlsConnectVer]
                 | otherwise = filter (<= tlsConnectVer) allVers
-            allVers = [SSL3, TLS10, TLS11, TLS12, TLS13ID26]
+            allVers = [SSL3, TLS10, TLS11, TLS12, TLS13ID28]
             validateCert = not (NoValidateCert `elem` flags)
             allowRenegotiation = AllowRenegotiation `elem` flags
 

@@ -77,7 +77,7 @@ handshakeClient' cparams ctx groups mcrand = do
     recvServerHello sentExtensions
     ver <- usingState_ ctx getVersion
     hrr <- usingState_ ctx getTLS13HRR
-    if ver == TLS13ID26 then do
+    if ver == TLS13ID28 then do
         if hrr then case drop 1 groups of
             []      -> error "HRR: no common group" -- fixme
             groups' -> do
@@ -104,7 +104,7 @@ handshakeClient' cparams ctx groups mcrand = do
   where ciphers      = supportedCiphers $ ctxSupported ctx
         compressions = supportedCompressions $ ctxSupported ctx
         highestVer = maximum $ supportedVersions $ ctxSupported ctx
-        tls13 = highestVer >= TLS13ID26
+        tls13 = highestVer >= TLS13ID28
         getExtensions = sequence [sniExtension
                                  ,secureReneg
                                  ,alpnExtension
@@ -174,7 +174,7 @@ handshakeClient' cparams ctx groups mcrand = do
           | otherwise = case clientWantSessionResume cparams of
               Nothing -> return Nothing
               Just (sid, sdata)
-                | sessionVersion sdata >= TLS13ID26 -> do
+                | sessionVersion sdata >= TLS13ID28 -> do
                       let usedHash = sessionHash sdata
                           siz = hashDigestSize usedHash
                           zero = B.replicate siz 0
@@ -206,7 +206,7 @@ handshakeClient' cparams ctx groups mcrand = do
         clientSession = case clientWantSessionResume cparams of
             Nothing -> Session Nothing
             Just (sid, sdata)
-              | sessionVersion sdata >= TLS13ID26 -> Session Nothing
+              | sessionVersion sdata >= TLS13ID28 -> Session Nothing
               | otherwise                         -> Session (Just sid)
 
         adjustExtentions exts ch
@@ -214,7 +214,7 @@ handshakeClient' cparams ctx groups mcrand = do
           | otherwise = case clientWantSessionResume cparams of
               Nothing -> return exts
               Just (_, sdata)
-                | sessionVersion sdata >= TLS13ID26 -> do
+                | sessionVersion sdata >= TLS13ID28 -> do
                       let usedHash = sessionHash sdata
                           siz = hashDigestSize usedHash
                           zero = B.replicate siz 0
@@ -249,7 +249,7 @@ handshakeClient' cparams ctx groups mcrand = do
 
         check0RTT = case clientWantSessionResume cparams of
             Just (_, sdata)
-              | sessionVersion sdata >= TLS13ID26 -> case supportedEarlyData (ctxSupported ctx) of
+              | sessionVersion sdata >= TLS13ID28 -> case supportedEarlyData (ctxSupported ctx) of
                 SendEarlyData earlyData
                   | fromIntegral (B.length earlyData) <= sessionMaxEarlyDataSize sdata                                  -> Just (sessionCipher sdata, earlyData)
                   | otherwise           -> Nothing
@@ -514,7 +514,7 @@ onServerHello ctx cparams sentExts (ServerHello rver serverRan serverSession cip
     case find (== ver) (supportedVersions $ ctxSupported ctx) of
         Nothing -> throwCore $ Error_Protocol ("server version " ++ show ver ++ " is not supported", True, ProtocolVersion)
         Just _  -> return ()
-    if ver == TLS13ID26 then do
+    if ver == TLS13ID28 then do
         usingHState ctx $ setHelloParameters13 cipherAlg isHRR
         return RecvStateDone
       else do
