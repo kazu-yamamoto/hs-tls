@@ -159,7 +159,7 @@ recvData13 ctx = liftIO $ do
                 maxSize = case extensionLookup extensionID_EarlyData exts >>= extensionDecode MsgTNewSessionTicket of
                   Just (EarlyDataIndication (Just ms)) -> ms
                   _                                    -> 0
-            tinfo <- createTLS13TicketInfo life (Right add) Nothing
+            tinfo <- createTLS13TicketInfo life (Right add)
             sdata <- getSessionData13 ctx usedCipher tinfo maxSize psk
             sessionEstablish (sharedSessionManager $ ctxShared ctx) label sdata
             putStrLn $ "NewSessionTicket received: lifetime = " ++ show life ++ " sec"
