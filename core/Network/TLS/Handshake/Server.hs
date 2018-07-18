@@ -760,7 +760,6 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
           | verifyData == verifyData' = do
               cfRecvTime <- getCurrentTimeFromBase
               let rtt = cfRecvTime - sfSentTime
-              usingHState ctx $ setRoundTripTime (Just rtt)
               setEstablished ctx Established
               setRxState ctx usedHash usedCipher clientApplicationTrafficSecret0
               sendNewSessionTicket masterSecret pendingTranscript rtt
