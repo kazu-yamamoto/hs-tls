@@ -149,7 +149,9 @@ recvData13 ctx = liftIO $ do
             finishedAction <- popPendingAction ctx
             finishedAction verifyData'
             recvData13 ctx
-        process (Handshake13 [NewSessionTicket13 life add nonce label exts]) = do
+        -- fixme: some implementations send multiple NST at the same time.
+        -- Only the first one is used at this moment.
+        process (Handshake13 (NewSessionTicket13 life add nonce label exts:_)) = do
             ResuptionSecret resumptionMasterSecret <- usingHState ctx getTLS13Secret
             tx <- readMVar (ctxTxState ctx)
             let Just usedCipher = stCipher tx
