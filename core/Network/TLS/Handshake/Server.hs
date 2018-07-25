@@ -685,11 +685,10 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     hCh <- transcriptHash ctx
     let earlySecret = hkdfExtract usedHash zero psk
         clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "c e traffic" hCh
-{-
-    putStrLn $ "hCh: " ++ showBytesHex hCh
-    putStrLn $ "earlySecret: " ++ showBytesHex earlySecret
-    putStrLn $ "clientEarlyTrafficSecret: " ++ showBytesHex clientEarlyTrafficSecret
--}
+    -- dumpKey ctx "CLIENT_EARLY_TRAFFIC_SECRET" clientEarlyTrafficSecret
+    -- putStrLn $ "hCh: " ++ showBytesHex hCh
+    -- putStrLn $ "earlySecret: " ++ showBytesHex earlySecret
+    -- putStrLn $ "clientEarlyTrafficSecret: " ++ showBytesHex clientEarlyTrafficSecret
     extensions <- checkBinder earlySecret binderInfo
     let authenticated = isJust binderInfo
         rtt0OK = authenticated && rtt0 && rtt0accept && is0RTTvalid
@@ -713,12 +712,12 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
     hChSh <- transcriptHash ctx
     let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "c hs traffic" hChSh
         serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "s hs traffic" hChSh
+    -- putStrLn $ "handshakeSecret: " ++ showBytesHex handshakeSecret
+    -- putStrLn $ "hChSh: " ++ showBytesHex hChSh
+    -- usingHState ctx getHandshakeMessages >>= mapM_ (putStrLn . showBytesHex)
+    -- dumpKey ctx "SERVER_HANDSHAKE_TRAFFIC_SECRET" serverHandshakeTrafficSecret
+    -- dumpKey ctx "CLIENT_HANDSHAKE_TRAFFIC_SECRET" clientHandshakeTrafficSecret
 {-
-    putStrLn $ "handshakeSecret: " ++ showBytesHex handshakeSecret
-    putStrLn $ "hChSh: " ++ showBytesHex hChSh
-    usingHState ctx getHandshakeMessages >>= mapM_ (putStrLn . showBytesHex)
-    putStrLn $ "serverHandshakeTrafficSecret: " ++ showBytesHex serverHandshakeTrafficSecret
-    putStrLn $ "clientHandshakeTrafficSecret: " ++ showBytesHex clientHandshakeTrafficSecret
     if rtt0OK then
        putStrLn "---- setRxState ctx usedHash usedCipher clientEarlyTrafficSecret"
      else
@@ -746,13 +745,11 @@ doHandshake13 sparams (certChain, privKey) ctx chosenVersion usedCipher exts use
         pendingTranscript = encodeHandshake13 $ Finished13 verifyData
     usingState_ ctx $ setExporterMasterSecret exporterMasterSecret
     ----------------------------------------------------------------
-{-
-    putStrLn $ "hChSf: " ++ showBytesHex hChSf
-    putStrLn $ "hChEoed: " ++ showBytesHex hChEoed
-    putStrLn $ "masterSecret: " ++ showBytesHex masterSecret
-    putStrLn $ "serverApplicationTrafficSecret0: " ++ showBytesHex serverApplicationTrafficSecret0
-    putStrLn $ "clientApplicationTrafficSecret0: " ++ showBytesHex clientApplicationTrafficSecret0
--}
+    -- putStrLn $ "hChSf: " ++ showBytesHex hChSf
+    -- putStrLn $ "hChEoed: " ++ showBytesHex hChEoed
+    -- putStrLn $ "masterSecret: " ++ showBytesHex masterSecret
+    -- dumpKey ctx "SERVER_TRAFFIC_SECRET_0" serverApplicationTrafficSecret0
+    -- dumpKey ctx "CLIENT_TRAFFIC_SECRET_0" clientApplicationTrafficSecret0
     setTxState ctx usedHash usedCipher serverApplicationTrafficSecret0
     -- Our use of "NewSessionTicket" is not session tickets which
     -- do not require states in the server side.

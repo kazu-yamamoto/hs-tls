@@ -24,6 +24,7 @@ import Network.TLS.Types
 import Network.TLS.Wire
 import Network.TLS.Parameters
 import Data.Time
+import System.IO
 
 ----------------------------------------------------------------
 
@@ -230,3 +231,16 @@ maxEarlyDataSize :: Context -> Word32
 maxEarlyDataSize ctx = case supportedEarlyData (ctxSupported ctx) of
                          AcceptEarlyData maxsize -> maxsize
                          _                       -> 0
+
+----------------------------------------------------------------
+
+dumpKey :: Context -> String -> ByteString -> IO ()
+dumpKey ctx label key = do
+    mhst <- getHState ctx
+    case mhst of
+      Nothing  -> return ()
+      Just hst -> do
+          let cr = unClientRandom $ hstClientRandom hst
+          hPutStrLn stderr $ label ++ " " ++ dump cr ++ " " ++ dump key
+  where
+    dump = init . tail . showBytesHex

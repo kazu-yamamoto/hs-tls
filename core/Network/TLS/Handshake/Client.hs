@@ -269,11 +269,9 @@ handshakeClient' cparams ctx groups mcrand = do
                 let hCh = hash usedHash $ B.concat hmsgs -- XXX
                 EarlySecret earlySecret <- usingHState ctx getTLS13Secret -- fixme
                 let clientEarlyTrafficSecret = deriveSecret usedHash earlySecret "c e traffic" hCh
-{-
-                putStrLn $ "hCh: " ++ showBytesHex hCh
-                putStrLn $ "clientEarlyTrafficSecret: " ++ showBytesHex clientEarlyTrafficSecret
-                putStrLn "---- setTxState ctx usedHash usedCipher clientEarlyTrafficSecret"
--}
+                -- putStrLn $ "hCh: " ++ showBytesHex hCh
+                -- dumpKey ctx "CLIENT_EARLY_TRAFFIC_SECRET" clientEarlyTrafficSecret
+                -- putStrLn "---- setTxState ctx usedHash usedCipher clientEarlyTrafficSecret"
                 setTxState ctx usedHash usedCipher clientEarlyTrafficSecret
                 -- fixme
                 Right eEarlyData <- writePacket13 ctx $ AppData13 earlyData
@@ -646,9 +644,7 @@ handshakeClient13' cparams ctx usedCipher usedHash = do
     when rtt0accepted $ do
         eoed <- writeHandshakePacket13 ctx EndOfEarlyData13
         sendBytes13 ctx eoed
-{-
-    putStrLn "---- setTxState ctx usedHash usedCipher clientHandshakeTrafficSecret"
--}
+    -- putStrLn "---- setTxState ctx usedHash usedCipher clientHandshakeTrafficSecret"
     rawFinished <- makeFinished ctx usedHash clientHandshakeTrafficSecret
     setTxState ctx usedHash usedCipher clientHandshakeTrafficSecret
     writeHandshakePacket13 ctx rawFinished >>= sendBytes13 ctx
@@ -666,14 +662,12 @@ handshakeClient13' cparams ctx usedCipher usedHash = do
         hChSh <- transcriptHash ctx
         let clientHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "c hs traffic" hChSh
             serverHandshakeTrafficSecret = deriveSecret usedHash handshakeSecret "s hs traffic" hChSh
-{-
-        putStrLn $ "earlySecret: " ++ showBytesHex earlySecret
-        putStrLn $ "handshakeSecret: " ++ showBytesHex handshakeSecret
-        putStrLn $ "hChSh: " ++ showBytesHex hChSh
-        usingHState ctx getHandshakeMessages >>= mapM_ (putStrLn . showBytesHex)
-        putStrLn $ "serverHandshakeTrafficSecret: " ++ showBytesHex serverHandshakeTrafficSecret
-        putStrLn $ "clientHandshakeTrafficSecret: " ++ showBytesHex clientHandshakeTrafficSecret
--}
+        -- putStrLn $ "earlySecret: " ++ showBytesHex earlySecret
+        -- putStrLn $ "handshakeSecret: " ++ showBytesHex handshakeSecret
+        -- putStrLn $ "hChSh: " ++ showBytesHex hChSh
+        -- usingHState ctx getHandshakeMessages >>= mapM_ (putStrLn . showBytesHex)
+        -- dumpKey ctx "SERVER_HANDSHAKE_TRAFFIC_SECRET" serverHandshakeTrafficSecret
+        -- dumpKey ctx "CLIENT_HANDSHAKE_TRAFFIC_SECRET" clientHandshakeTrafficSecret
         setRxState ctx usedHash usedCipher serverHandshakeTrafficSecret
         return (resuming, handshakeSecret, clientHandshakeTrafficSecret, serverHandshakeTrafficSecret)
 
@@ -683,13 +677,11 @@ handshakeClient13' cparams ctx usedCipher usedHash = do
             serverApplicationTrafficSecret0 = deriveSecret usedHash masterSecret "s ap traffic" hChSf
             exporterMasterSecret = deriveSecret usedHash masterSecret "exp master" hChSf
         usingState_ ctx $ setExporterMasterSecret exporterMasterSecret
-{-
-        putStrLn $ "hChSf: " ++ showBytesHex hChSf
-        putStrLn $ "masterSecret: " ++ showBytesHex masterSecret
-        putStrLn $ "serverApplicationTrafficSecret0: " ++ showBytesHex serverApplicationTrafficSecret0
-        putStrLn $ "clientApplicationTrafficSecret0: " ++ showBytesHex clientApplicationTrafficSecret0
-        putStrLn "---- setTxState ctx usedHash usedCipher clientApplicationTrafficSecret0"
--}
+        -- putStrLn $ "hChSf: " ++ showBytesHex hChSf
+        -- putStrLn $ "masterSecret: " ++ showBytesHex masterSecret
+        -- dumpKey ctx "SERVER_TRAFFIC_SECRET_0" serverApplicationTrafficSecret0
+        -- dumpKey ctx "CLIENT_TRAFFIC_SECRET_0" clientApplicationTrafficSecret0
+        -- putStrLn "---- setTxState ctx usedHash usedCipher clientApplicationTrafficSecret0"
         setTxState ctx usedHash usedCipher clientApplicationTrafficSecret0
         setRxState ctx usedHash usedCipher serverApplicationTrafficSecret0
         return masterSecret
