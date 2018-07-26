@@ -57,7 +57,11 @@ data TLS13TicketInfo = TLS13TicketInfo
     } deriving (Eq)
 
 instance Show TLS13TicketInfo where
-    show s = undefined
+    show s = "TLS13TicketInfo { "
+        ++   "lifetime = " ++ show (lifetime s)
+        ++ ", ageAdd = "   ++ show (ageAdd s)
+        ++ ", txrxTime = " ++ show (txrxTime s)
+        ++ " }"
 
 -- | Cipher identification
 type CipherID = Word16
