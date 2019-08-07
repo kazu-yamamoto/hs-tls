@@ -712,7 +712,7 @@ doHandshake13 sparams ctx choice chExts clientSession allCreds clientKeyShare rt
 
     let expectFinished' h vd = liftIO $ expectFinished h vd
     if not (sAuthenticated status13) && serverWantClientCert sparams then
-        runRecvHandshake13 $ do
+        runRecvHandshake13 [] $ do
           skip <- recvHandshake13 ctx expectCertificate
           unless skip $ recvHandshake13hash ctx (expectCertVerify sparams ctx)
           recvHandshake13hash ctx expectFinished'
@@ -721,7 +721,7 @@ doHandshake13 sparams ctx choice chExts clientSession allCreds clientKeyShare rt
         setPendingActions ctx [PendingAction True expectEndOfEarlyData
                               ,PendingActionHash True expectFinished]
       else
-        runRecvHandshake13 $ do
+        runRecvHandshake13 [] $ do
           recvHandshake13hash ctx expectFinished'
           ensureRecvComplete ctx
   where

@@ -837,7 +837,7 @@ handshakeClient13' cparams ctx groupSent choice = do
     let handshakeSecret = triBase hkey
         ClientTrafficSecret clientHandshakeSecret = triClient hkey
         ServerTrafficSecret serverHandshakeSecret = triServer hkey
-    rtt0accepted <- runRecvHandshake13 $ do
+    rtt0accepted <- runRecvHandshake13 [] $ do
         accepted <- recvHandshake13 ctx $ expectEncryptedExtensions ctx
         unless resuming $ recvHandshake13 ctx $ expectCertRequest cparams ctx
         recvHandshake13hash ctx $ expectFinished choice serverHandshakeSecret

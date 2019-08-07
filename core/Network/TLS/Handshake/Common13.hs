@@ -377,9 +377,9 @@ getHandshake13 ctx = RecvHandshake13M $ do
             Right x                    -> unexpected (show x) (Just "handshake 13")
             Left err                   -> throwCore err
 
-runRecvHandshake13 :: MonadIO m => RecvHandshake13M m a -> m a
-runRecvHandshake13 (RecvHandshake13M f) = do
-    (result, new) <- runStateT f []
+runRecvHandshake13 :: MonadIO m => [Handshake13] -> RecvHandshake13M m a -> m a
+runRecvHandshake13 hss (RecvHandshake13M f) = do
+    (result, new) <- runStateT f hss
     unless (null new) $ unexpected "spurious handshake 13" Nothing
     return result
 
