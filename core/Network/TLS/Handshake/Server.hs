@@ -84,7 +84,7 @@ handshakeServer sparams ctx = liftIO $ do
 --      -> finish             <- finish
 --
 handshakeServerWith :: ServerParams -> Context -> Handshake -> IO ()
-handshakeServerWith sparams ctx clientHello@(ClientHello legacyVersion _ clientSession ciphers compressions exts _) = do
+handshakeServerWith sparams ctx clientHello@(ClientHello legacyVersion _ clientSession ciphers compressions chExts _) = do
     established <- ctxEstablished ctx
     -- renego is not allowed in TLS 1.3
     when (established /= NotEstablished) $ do
@@ -115,23 +115,23 @@ handshakeServerWith sparams ctx clientHello@(ClientHello legacyVersion _ clientS
           legacyVersion < TLS12) $
         throwCore $ Error_Protocol ("fallback is not allowed", True, InappropriateFallback)
 
-    (chosenVersion, clientVersion, serverName, allCreds) <- chooseParameters sparams ctx legacyVersion exts renegotiation
+    (chosenVersion, clientVersion, serverName, allCreds) <- chooseParameters sparams ctx legacyVersion chExts renegotiation
 
     -- TLS version dependent
     if chosenVersion <= TLS12 then
-        handshakeServerWithTLS12 sparams ctx chosenVersion allCreds exts ciphers serverName clientVersion compressions clientSession
+        handshakeServerWithTLS12 sparams ctx chosenVersion allCreds chExts ciphers serverName clientVersion compressions clientSession
       else do
         mapM_ ensureNullCompression compressions
         -- fixme: we should check if the client random is the same as
         -- that in the first client hello in the case of hello retry.
-        handshakeServerWithTLS13 sparams ctx chosenVersion allCreds exts ciphers serverName clientSession
+        handshakeServerWithTLS13 sparams ctx chosenVersion allCreds chExts ciphers serverName clientSession
 handshakeServerWith _ _ _ = throwCore $ Error_Protocol ("unexpected handshake message received in handshakeServerWith", True, HandshakeFailure)
 
 
 chooseParameters :: ServerParams -> Context -> Version -> [ExtensionRaw] -> Bool -> IO (Version, Version, Maybe HostName, Credentials)
-chooseParameters sparams ctx legacyVersion exts renegotiation = do
+chooseParameters sparams ctx legacyVersion chExts renegotiation = do
     -- choosing TLS version
-    let clientVersions = case extensionLookup extensionID_SupportedVersions exts >>= extensionDecode MsgTClientHello of
+    let clientVersions = case extensionLookup extensionID_SupportedVersions chExts >>= extensionDecode MsgTClientHello of
             Just (SupportedVersionsClientHello vers) -> vers
             _                                        -> []
         clientVersion = min TLS12 legacyVersion
@@ -150,7 +150,7 @@ chooseParameters sparams ctx legacyVersion exts renegotiation = do
                   Just v  -> return v
 
     -- SNI (Server Name Indication)
-    let serverName = case extensionLookup extensionID_ServerName exts >>= extensionDecode MsgTClientHello of
+    let serverName = case extensionLookup extensionID_ServerName chExts >>= extensionDecode MsgTClientHello of
             Just (ServerName ns) -> listToMaybe (mapMaybe toHostName ns)
                 where toHostName (ServerNameHostName hostName) = Just hostName
                       toHostName (ServerNameOther _)           = Nothing
@@ -158,7 +158,7 @@ chooseParameters sparams ctx legacyVersion exts renegotiation = do
     maybe (return ()) (usingState_ ctx . setClientSNI) serverName
 
     -- ALPN (Application Layer Protocol Negotiation)
-    case extensionLookup extensionID_ApplicationLayerProtocolNegotiation exts >>= extensionDecode MsgTClientHello of
+    case extensionLookup extensionID_ApplicationLayerProtocolNegotiation chExts >>= extensionDecode MsgTClientHello of
         Just (ApplicationLayerProtocolNegotiation protos) -> usingState_ ctx $ setClientALPNSuggest protos
         _ -> return ()
 
@@ -179,7 +179,7 @@ handshakeServerWithTLS12 :: ServerParams
                          -> [CompressionID]
                          -> Session
                          -> IO ()
-handshakeServerWithTLS12 sparams ctx chosenVersion allCreds exts ciphers serverName clientVersion compressions clientSession = do
+handshakeServerWithTLS12 sparams ctx chosenVersion allCreds chExts ciphers serverName clientVersion compressions clientSession = do
     -- If compression is null, commonCompressions should be [0].
     when (null commonCompressions) $ throwCore $
         Error_Protocol ("no compression in common with the client", True, HandshakeFailure)
@@ -199,7 +199,7 @@ handshakeServerWithTLS12 sparams ctx chosenVersion allCreds exts ciphers serverN
     -- negotiated signature parameters.  Then ciphers are evalutated from
     -- the resulting credentials.
 
-    let possibleGroups   = negotiatedGroupsInCommon ctx exts
+    let possibleGroups   = negotiatedGroupsInCommon ctx chExts
         possibleECGroups = possibleGroups `intersect` availableECGroups
         possibleFFGroups = possibleGroups `intersect` availableFFGroups
         hasCommonGroupForECDHE = not (null possibleECGroups)
@@ -224,7 +224,7 @@ handshakeServerWithTLS12 sparams ctx chosenVersion allCreds exts ciphers serverN
             = case chosenVersion of
                   TLS12 -> let -- Build a list of all hash/signature algorithms in common between
                                -- client and server.
-                               possibleHashSigAlgs = hashAndSignaturesInCommon ctx exts
+                               possibleHashSigAlgs = hashAndSignaturesInCommon ctx chExts
 
                                -- Check that a candidate signature credential will be compatible with
                                -- client & server hash/signature algorithms.  This returns Just Int
@@ -245,7 +245,7 @@ handshakeServerWithTLS12 sparams ctx chosenVersion allCreds exts ciphers serverN
                                -- The condition is based on resulting (EC)DHE ciphers so that
                                -- filtering credentials does not give advantage to a less secure
                                -- key exchange like CipherKeyExchange_RSA or CipherKeyExchange_DH_Anon.
-                               cltCreds    = filterCredentialsWithHashSignatures exts allCreds
+                               cltCreds    = filterCredentialsWithHashSignatures chExts allCreds
                                sigCltCreds = filterSortCredentials signingRank cltCreds
                                sigAllCreds = filterSortCredentials signingRank allCreds
                                cltCiphers  = selectCipher cltCreds sigCltCreds
@@ -282,11 +282,11 @@ handshakeServerWithTLS12 sparams ctx chosenVersion allCreds exts ciphers serverN
 
     -- Currently, we don't send back EcPointFormats. In this case,
     -- the client chooses EcPointFormat_Uncompressed.
-    case extensionLookup extensionID_EcPointFormats exts >>= extensionDecode MsgTClientHello of
+    case extensionLookup extensionID_EcPointFormats chExts >>= extensionDecode MsgTClientHello of
         Just (EcPointFormatsSupported fs) -> usingState_ ctx $ setClientEcPointFormatSuggest fs
         _ -> return ()
 
-    doHandshake sparams cred ctx chosenVersion usedCipher usedCompression clientSession resumeSessionData exts
+    doHandshake sparams cred ctx chosenVersion usedCipher usedCompression clientSession resumeSessionData chExts
 
   where
         commonCiphers creds sigCreds = filter ((`elem` ciphers) . cipherID) (getCiphers sparams creds sigCreds)
@@ -308,7 +308,7 @@ handshakeServerWithTLS12 sparams ctx chosenVersion allCreds exts ciphers serverN
 doHandshake :: ServerParams -> Maybe Credential -> Context -> Version -> Cipher
             -> Compression -> Session -> Maybe SessionData
             -> [ExtensionRaw] -> IO ()
-doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSession resumeSessionData exts = do
+doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSession resumeSessionData chExts = do
     case resumeSessionData of
         Nothing -> do
             handshakeSendServerData
@@ -350,7 +350,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
                             return [ ExtensionRaw extensionID_SecureRenegotiation vf ]
                     else return []
 
-            protoExt <- applicationProtocol ctx exts sparams
+            protoExt <- applicationProtocol ctx chExts sparams
             sniExt   <- do
                 resuming <- usingState_ ctx isSessionResuming
                 if resuming
@@ -417,7 +417,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
             sendPacket ctx (Handshake [ServerHelloDone])
 
         setup_DHE = do
-            let possibleFFGroups = negotiatedGroupsInCommon ctx exts `intersect` availableFFGroups
+            let possibleFFGroups = negotiatedGroupsInCommon ctx chExts `intersect` availableFFGroups
             (dhparams, priv, pub) <-
                     case possibleFFGroups of
                         []  ->
@@ -449,7 +449,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
             usedVersion <- usingState_ ctx getVersion
             case usedVersion of
               TLS12 -> do
-                  let hashSigs = hashAndSignaturesInCommon ctx exts
+                  let hashSigs = hashAndSignaturesInCommon ctx chExts
                   case filter (pubKey `signatureCompatible`) hashSigs of
                       []  -> error ("no hash signature for " ++ pubkeyType pubKey)
                       x:_ -> return $ Just x
@@ -476,7 +476,7 @@ doHandshake sparams mcred ctx chosenVersion usedCipher usedCompression clientSes
             return serverParams
 
         generateSKX_ECDHE kxsAlg = do
-            let possibleECGroups = negotiatedGroupsInCommon ctx exts `intersect` availableECGroups
+            let possibleECGroups = negotiatedGroupsInCommon ctx chExts `intersect` availableECGroups
             grp <- case possibleECGroups of
                      []  -> throwCore $ Error_Protocol ("no common group", True, HandshakeFailure)
                      g:_ -> return g
@@ -562,8 +562,8 @@ checkValidClientCertChain ctx errmsg = do
                 | otherwise                 -> return cc
 
 hashAndSignaturesInCommon :: Context -> [ExtensionRaw] -> [HashAndSignatureAlgorithm]
-hashAndSignaturesInCommon ctx exts =
-    let cHashSigs = case extensionLookup extensionID_SignatureAlgorithms exts >>= extensionDecode MsgTClientHello of
+hashAndSignaturesInCommon ctx chExts =
+    let cHashSigs = case extensionLookup extensionID_SignatureAlgorithms chExts >>= extensionDecode MsgTClientHello of
             -- See Section 7.4.1.4.1 of RFC 5246.
             Nothing -> [(HashSHA1, SignatureECDSA)
                        ,(HashSHA1, SignatureRSA)
@@ -577,7 +577,7 @@ hashAndSignaturesInCommon ctx exts =
      in sHashSigs `intersect` cHashSigs
 
 negotiatedGroupsInCommon :: Context -> [ExtensionRaw] -> [Group]
-negotiatedGroupsInCommon ctx exts = case extensionLookup extensionID_NegotiatedGroups exts >>= extensionDecode MsgTClientHello of
+negotiatedGroupsInCommon ctx chExts = case extensionLookup extensionID_NegotiatedGroups chExts >>= extensionDecode MsgTClientHello of
     Just (NegotiatedGroups clientGroups) ->
         let serverGroups = supportedGroups (ctxSupported ctx)
         in serverGroups `intersect` clientGroups
@@ -613,7 +613,7 @@ filterSortCredentials rankFun (Credentials creds) =
 -- output credentials.  Respecting client constraints on KX signatures is
 -- mandatory but not implemented by this function.
 filterCredentialsWithHashSignatures :: [ExtensionRaw] -> Credentials -> Credentials
-filterCredentialsWithHashSignatures exts =
+filterCredentialsWithHashSignatures chExts =
     case withExt extensionID_SignatureAlgorithmsCert of
         Just (SignatureAlgorithmsCert sas) -> withAlgs sas
         Nothing ->
@@ -621,7 +621,7 @@ filterCredentialsWithHashSignatures exts =
                 Nothing                        -> id
                 Just (SignatureAlgorithms sas) -> withAlgs sas
   where
-    withExt extId = extensionLookup extId exts >>= extensionDecode MsgTClientHello
+    withExt extId = extensionLookup extId chExts >>= extensionDecode MsgTClientHello
     withAlgs sas = filterCredentials (credentialMatchesHashSignatures sas)
     filterCredentials p (Credentials l) = Credentials (filter p l)
 
@@ -966,13 +966,13 @@ expectCertVerify sparams ctx hChCc (CertVerify13 sigAlg sig) = liftIO $ do
 expectCertVerify _ _ _ hs = unexpected (show hs) (Just "certificate verify 13")
 
 helloRetryRequest :: MonadIO m => ServerParams -> Context -> Choice -> [ExtensionRaw] -> Session -> [Group] -> m ()
-helloRetryRequest sparams ctx choice exts clientSession serverGroups = liftIO $ do
+helloRetryRequest sparams ctx choice chExts clientSession serverGroups = liftIO $ do
     twice <- usingState_ ctx getTLS13HRR
     when twice $
         throwCore $ Error_Protocol ("Hello retry not allowed again", True, HandshakeFailure)
     usingState_ ctx $ setTLS13HRR True
     failOnEitherError $ usingHState ctx $ setHelloParameters13 usedCipher
-    let clientGroups = case extensionLookup extensionID_NegotiatedGroups exts >>= extensionDecode MsgTClientHello of
+    let clientGroups = case extensionLookup extensionID_NegotiatedGroups chExts >>= extensionDecode MsgTClientHello of
           Just (NegotiatedGroups gs) -> gs
           Nothing                    -> []
         possibleGroups = serverGroups `intersect` clientGroups
@@ -1040,7 +1040,7 @@ findHighestVersionFrom13 clientVersions serverVersions = case svs `intersect` cv
     cvs = sortOn Down clientVersions
 
 applicationProtocol :: Context -> [ExtensionRaw] -> ServerParams -> IO [ExtensionRaw]
-applicationProtocol ctx exts sparams
+applicationProtocol ctx chExts sparams
     | clientALPNSuggest = do
         suggest <- usingState_ ctx getClientALPNSuggest
         case (onALPNClientSuggest $ serverHooks sparams, suggest) of
@@ -1054,7 +1054,7 @@ applicationProtocol ctx exts sparams
             (_, _)                  -> return []
     | otherwise = return []
   where
-    clientALPNSuggest = isJust $ extensionLookup extensionID_ApplicationLayerProtocolNegotiation exts
+    clientALPNSuggest = isJust $ extensionLookup extensionID_ApplicationLayerProtocolNegotiation chExts
 
 credentialsFindForSigning13 :: [HashAndSignatureAlgorithm] -> Credentials -> Maybe (Credential, HashAndSignatureAlgorithm)
 credentialsFindForSigning13 hss0 creds = loop hss0
