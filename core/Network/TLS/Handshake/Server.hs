@@ -11,6 +11,9 @@ module Network.TLS.Handshake.Server
     , handshakeServerWith
     , requestCertificateServer
     , postHandshakeAuthServerWith
+    , makeServerHandshake13
+    , HashChBeforeCf
+    , ExpectFinished
     ) where
 
 import Network.TLS.Parameters
@@ -33,6 +36,7 @@ import Network.TLS.Handshake.Process
 import Network.TLS.Handshake.Key
 import Network.TLS.Handshake.Random
 import Network.TLS.Measurement
+import Network.TLS.Sending13 (update13)
 import qualified Data.ByteString as B
 import Data.X509 (ExtKeyUsageFlag(..))
 
@@ -45,6 +49,7 @@ import Network.TLS.Handshake.Certificate
 import Network.TLS.X509
 import Network.TLS.Handshake.State13
 import Network.TLS.Handshake.Common13
+import Network.TLS.Packet13 (decodeHandshakes13)
 
 -- Put the server context in handshake mode.
 --
@@ -661,10 +666,12 @@ handshakeServerWithTLS13 sparams ctx chosenVersion allCreds chExts clientCiphers
       Just clientKeyShare -> doHandshake13 sparams ctx choice chExts clientSession allCreds clientKeyShare rtt0
   where
     serverGroups = supportedGroups (ctxSupported ctx)
-    findKeyShare _      [] = Nothing
-    findKeyShare ks (g:gs) = case find (\ent -> keyShareEntryGroup ent == g) ks of
-      Just k  -> Just k
-      Nothing -> findKeyShare ks gs
+
+findKeyShare :: [KeyShareEntry] -> [Group] -> Maybe KeyShareEntry
+findKeyShare _      [] = Nothing
+findKeyShare ks (g:gs) = case find (\ent -> keyShareEntryGroup ent == g) ks of
+  Just k  -> Just k
+  Nothing -> findKeyShare ks gs
 
 chooseParameters13 :: ServerParams -> Context -> Version -> [ExtensionRaw] -> [CipherID] -> IO (Choice, [KeyShareEntry], Bool)
 chooseParameters13 sparams ctx chosenVersion chExts clientCiphers = do
@@ -864,7 +871,8 @@ checkCondition13 sparams ctx choice chExts clientKeyShare rtt0 allCreds = do
 sendServerHelloAndEncryptedHandshakes :: ServerParams -> Context -> Choice -> [ExtensionRaw] -> Status13 -> SecretTriple EarlySecret -> [ExtensionRaw] -> ByteString -> Session -> Maybe ((CertificateChain, PrivKey), HashAndSignatureAlgorithm) -> IO (SecretTriple HandshakeSecret)
 sendServerHelloAndEncryptedHandshakes sparams ctx choice chExts status13 earlyKey shExts ecdhe clientSession mCredInfo = do
     runPacketFlight ctx $ do
-        sendServerHello
+        helo <- liftIO $ makeServerHello13 sparams ctx choice shExts clientSession
+        loadPacket13 ctx $ Handshake13 [helo]
         sendChangeCipherSpec13 ctx
     ----------------------------------------------------------------
         handKey <- liftIO $ calculateHandshakeSecret ctx choice earlySecret ecdhe
@@ -875,60 +883,16 @@ sendServerHelloAndEncryptedHandshakes sparams ctx choice chExts status13 earlyKe
             setRxState ctx usedHash usedCipher $ if rtt0OK then clientEarlySecret else clientHandshakeSecret
             setTxState ctx usedHash usedCipher serverHandshakeSecret
     ----------------------------------------------------------------
-        sendExtensions rtt0OK
-        case mCredInfo of
-            Nothing              -> return ()
-            Just (cred, hashSig) -> sendCertAndVerify cred hashSig
+        ext13 <- makeExtensions13 sparams ctx chExts rtt0OK
+        loadPacket13 ctx $ Handshake13 [ext13]
+        prepareCertificateStuff sparams ctx mCredInfo $ \h ->
+          loadPacket13 ctx $ Handshake13 [h]
         rawFinished <- makeFinished ctx usedHash serverHandshakeSecret
         loadPacket13 ctx $ Handshake13 [rawFinished]
         return handKey
   where
-    sendServerHello = do
-        srand <- liftIO $ serverRandom ctx chosenVersion $ supportedVersions $ serverSupported sparams
-        let helo = ServerHello13 srand clientSession (cipherID usedCipher) shExts
-        loadPacket13 ctx $ Handshake13 [helo]
-
-    sendExtensions rtt0OK = do
-        protoExt <- liftIO $ applicationProtocol ctx chExts sparams
-        msni <- liftIO $ usingState_ ctx getClientSNI
-        let sniExtension = case msni of
-              -- RFC6066: In this event, the server SHALL include
-              -- an extension of type "server_name" in the
-              -- (extended) server hello. The "extension_data"
-              -- field of this extension SHALL be empty.
-              Just _  -> Just $ ExtensionRaw extensionID_ServerName ""
-              Nothing -> Nothing
-        mgroup <- usingHState ctx getNegotiatedGroup
-        let serverGroups = supportedGroups (ctxSupported ctx)
-            groupExtension
-              | null serverGroups = Nothing
-              | maybe True (== head serverGroups) mgroup = Nothing
-              | otherwise = Just $ ExtensionRaw extensionID_NegotiatedGroups $ extensionEncode (NegotiatedGroups serverGroups)
-        let earlyDataExtension
-              | rtt0OK = Just $ ExtensionRaw extensionID_EarlyData $ extensionEncode (EarlyDataIndication Nothing)
-              | otherwise = Nothing
-        let extensions = catMaybes [earlyDataExtension, groupExtension, sniExtension] ++ protoExt
-        loadPacket13 ctx $ Handshake13 [EncryptedExtensions13 extensions]
-
-    sendCertAndVerify cred@(certChain, _) hashSig = do
-        storePrivInfoServer ctx cred
-        when (serverWantClientCert sparams) $ do
-            let certReqCtx = "" -- this must be zero length here.
-                certReq = makeCertRequest sparams ctx certReqCtx
-            loadPacket13 ctx $ Handshake13 [certReq]
-            usingHState ctx $ setCertReqSent True
-
-        let CertificateChain cs = certChain
-            ess = replicate (length cs) []
-        loadPacket13 ctx $ Handshake13 [Certificate13 "" certChain ess]
-        hChSc <- transcriptHash ctx
-        pubkey <- getLocalPublicKey ctx
-        vrfy <- makeCertVerify ctx pubkey hashSig hChSc
-        loadPacket13 ctx $ Handshake13 [vrfy]
-
     usedCipher    = cCipher choice
     usedHash      = cHash choice
-    chosenVersion = cVersion choice
     earlySecret = triBase earlyKey
     ClientTrafficSecret clientEarlySecret = triClient earlyKey
 
@@ -1209,3 +1173,115 @@ postHandshakeAuthServerWith sparams ctx h@(Certificate13 certCtx certs _ext) = d
 
 postHandshakeAuthServerWith _ _ _ =
     throwCore $ Error_Protocol ("unexpected handshake message received in postHandshakeAuthServerWith", True, UnexpectedMessage)
+
+----------------------------------------------------------------
+
+type HashChBeforeCf = ByteString
+type ExpectFinished = HashChBeforeCf -> Handshake13 -> IO ()
+
+-- | The third argument is client hello.
+--   Returning early keys, handshake keys and application keys.
+makeServerHandshake13 :: ServerParams -> Context -> ByteString
+                      -> IO ([ByteString]
+                            ,SecretTriple EarlySecret
+                            ,SecretTriple HandshakeSecret
+                            ,SecretTriple ApplicationSecret
+                            ,ExpectFinished)
+makeServerHandshake13 sparams ctx bs = do
+    let Right [ClientHello13 legacyVersion crand clientSession clientCiphers chExts] = decodeHandshakes13 bs
+    startHandshake ctx legacyVersion crand
+    update13 ctx bs
+    (chosenVersion, _clientVersion, _, allCreds)
+      <- chooseParameters sparams ctx legacyVersion chExts False
+    (choice, keyShares, rtt0)
+      <- chooseParameters13 sparams ctx chosenVersion chExts clientCiphers
+    let Just clientKeyShare = findKeyShare keyShares serverGroups
+    (status13, earlyKey, shExts, ecdhe, mCredInfo)
+      <- checkCondition13 sparams ctx choice chExts clientKeyShare rtt0 allCreds
+    (handKey, handshakes)
+      <- makeServerHelloAndEncryptedHandshakes sparams ctx choice chExts status13 earlyKey shExts ecdhe clientSession mCredInfo
+    (traffKey, expectFinished, _expectEndOfEarlyData)
+      <- establishTLS13 sparams ctx choice chExts status13 handKey
+    return (handshakes, earlyKey, handKey, traffKey, expectFinished)
+  where
+    serverGroups = supportedGroups (ctxSupported ctx)
+
+makeServerHelloAndEncryptedHandshakes :: ServerParams -> Context -> Choice -> [ExtensionRaw] -> Status13 -> SecretTriple EarlySecret -> [ExtensionRaw] -> ByteString -> Session -> Maybe (Credential, HashAndSignatureAlgorithm) -> IO (SecretTriple HandshakeSecret, [ByteString])
+makeServerHelloAndEncryptedHandshakes sparams ctx choice chExts status13 key13 shExts ecdhe clientSession mCredInfo = runPacketFlight2 $ do
+    helo <- liftIO $ makeServerHello13 sparams ctx choice shExts clientSession
+    appendHandshake13 ctx helo
+    handKey <- liftIO $ calculateHandshakeSecret ctx choice earlySecret ecdhe
+    let ServerTrafficSecret serverHandshakeSecret = triServer handKey
+        ClientTrafficSecret clientHandshakeSecret = triClient handKey
+    liftIO $ do
+        setRxState ctx usedHash usedCipher $ if rtt0OK then clientEarlySecret else clientHandshakeSecret
+        setTxState ctx usedHash usedCipher serverHandshakeSecret
+    ext13 <- makeExtensions13 sparams ctx chExts rtt0OK
+    appendHandshake13 ctx ext13
+    prepareCertificateStuff sparams ctx mCredInfo $ appendHandshake13 ctx
+    rawFinished <- makeFinished ctx usedHash serverHandshakeSecret
+    appendHandshake13 ctx rawFinished
+    return handKey
+  where
+    usedCipher = cCipher choice
+    usedHash   = cHash choice
+    rtt0OK     = s0RttOK status13
+    earlySecret = triBase key13
+    ClientTrafficSecret clientEarlySecret = triClient key13
+
+----------------------------------------------------------------
+
+makeServerHello13 :: ServerParams -> Context
+                  -> Choice -> [ExtensionRaw] -> Session
+                  -> IO Handshake13
+makeServerHello13 sparams ctx choice shExts clientSession = do
+    srand <- serverRandom ctx chosenVersion $ supportedVersions $ serverSupported sparams
+    return $ ServerHello13 srand clientSession (cipherID usedCipher) shExts
+  where
+    chosenVersion = cVersion choice
+    usedCipher    = cCipher choice
+
+makeExtensions13 :: MonadIO m => ServerParams -> Context -> [ExtensionRaw] -> Bool -> m Handshake13
+makeExtensions13 sparams ctx chExts rtt0OK = do
+    protoExt <- liftIO $ applicationProtocol ctx chExts sparams
+    msni <- liftIO $ usingState_ ctx getClientSNI
+    let sniExtension = case msni of
+          -- RFC6066: In this event, the server SHALL include
+          -- an extension of type "server_name" in the
+          -- (extended) server hello. The "extension_data"
+          -- field of this extension SHALL be empty.
+          Just _  -> Just $ ExtensionRaw extensionID_ServerName ""
+          Nothing -> Nothing
+    mgroup <- usingHState ctx getNegotiatedGroup
+    let serverGroups = supportedGroups (ctxSupported ctx)
+        groupExtension
+          | null serverGroups = Nothing
+          | maybe True (== head serverGroups) mgroup = Nothing
+          | otherwise = Just $ ExtensionRaw extensionID_NegotiatedGroups $ extensionEncode (NegotiatedGroups serverGroups)
+    let earlyDataExtension
+          | rtt0OK = Just $ ExtensionRaw extensionID_EarlyData $ extensionEncode (EarlyDataIndication Nothing)
+          | otherwise = Nothing
+    let extensions = catMaybes [earlyDataExtension, groupExtension, sniExtension] ++ protoExt
+    return $ EncryptedExtensions13 extensions
+
+makeCertificate13 :: Credential -> Handshake13
+makeCertificate13 (certChain, _) = Certificate13 "" certChain ess
+  where
+    CertificateChain cs = certChain
+    ess = replicate (length cs) []
+
+prepareCertificateStuff :: (MonadIO m, MonadFail m) => ServerParams -> Context -> Maybe (Credential, HashAndSignatureAlgorithm) -> (Handshake13 -> m ()) -> m ()
+prepareCertificateStuff _ _ Nothing _ = return ()
+prepareCertificateStuff sparams ctx (Just (cred, hashSig)) action = do
+    storePrivInfoServer ctx cred
+    when (serverWantClientCert sparams) $ do
+        let certReqCtx = "" -- this must be zero length here.
+            certReq = makeCertRequest sparams ctx certReqCtx
+        action certReq
+        usingHState ctx $ setCertReqSent True
+    let cert = makeCertificate13 cred
+    action cert
+    hChSc <- transcriptHash ctx
+    pubkey <- getLocalPublicKey ctx
+    vrfy <- makeCertVerify ctx pubkey hashSig hChSc
+    action vrfy
