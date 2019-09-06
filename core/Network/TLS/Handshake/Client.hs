@@ -11,6 +11,9 @@ module Network.TLS.Handshake.Client
     ( handshakeClient
     , handshakeClientWith
     , postHandshakeAuthClientWith
+    , makeClientHello13
+    , handleServerHello13
+    , makeClientFinished13
     ) where
 
 import Network.TLS.Crypto
@@ -22,6 +25,7 @@ import Network.TLS.Cipher
 import Network.TLS.Compression
 import Network.TLS.Credentials
 import Network.TLS.Packet hiding (getExtensions)
+import Network.TLS.Packet13 (encodeHandshake13, decodeHandshakes13)
 import Network.TLS.ErrT
 import Network.TLS.Extension
 import Network.TLS.IO
@@ -29,6 +33,7 @@ import Network.TLS.Imports
 import Network.TLS.State
 import Network.TLS.Measurement
 import Network.TLS.Util (bytesEq, catchException, fromJust, mapChunks_)
+import Network.TLS.Sending13 (update13)
 import Network.TLS.Types
 import Network.TLS.X509
 import qualified Data.ByteString as B
@@ -1070,3 +1075,64 @@ postHandshakeAuthClientWith cparams ctx h@(CertRequest13 certReqCtx exts) =
 
 postHandshakeAuthClientWith _ _ _ =
     throwCore $ Error_Protocol ("unexpected handshake message received in postHandshakeAuthClientWith", True, UnexpectedMessage)
+
+----------------------------------------------------------------
+
+makeClientHello13 :: ClientParams -> Context -> IO (Handshake13, ByteString)
+makeClientHello13 cparams ctx = do
+    (ClientHello ver crand clientSession cipherIds _ chExts Nothing, _)
+      <- makeClientHello cparams ctx groups Nothing
+    let clientHello13 = ClientHello13 ver crand clientSession cipherIds chExts
+        bs = encodeHandshake13 clientHello13
+    update13 ctx bs
+    return (clientHello13, bs)
+  where
+    groups = supportedGroups (ctxSupported ctx)
+
+-- | The third argument is client hello.
+--   The fourth argument is server hello.
+--   Returning handshake keys.
+handleServerHello13 :: ClientParams -> Context -> Handshake13 -> ByteString-> IO (Cipher, SecretTriple HandshakeSecret, Bool)
+handleServerHello13 cparams ctx (ClientHello13 _ver _crand clientSession _cipherIds chExts) bs = do
+    let Right [ServerHello13 srand serverSession cipher shExts] = decodeHandshakes13 bs
+        sh = ServerHello TLS12 srand serverSession cipher 0 shExts
+    let chExtIds = map (\(ExtensionRaw i _) -> i) chExts
+    _ <- onServerHello ctx cparams clientSession chExtIds sh
+    update13 ctx bs
+    choice <- makeCipherChoice TLS13 <$> usingHState ctx getPendingCipher
+    groupSent <- case extensionLookup extensionID_KeyShare chExts >>= extensionDecode MsgTClientHello of
+          Just (KeyShareClientHello [kse]) -> return $ Just (keyShareEntryGroup kse)
+          _                                -> error "handleServerHello13"
+    switchToHandshakeSecret ctx choice groupSent
+handleServerHello13 _ _ _ _ = error "handleServerHello13"
+
+-- | The third argument is handshake messages from encrypted extensions
+--   to server finish.
+--   Returning client finished and application keys.
+makeClientFinished13 :: ClientParams -> Context -> ByteString
+                     -> SecretTriple HandshakeSecret -> Bool
+                     -> IO (ByteString, SecretTriple ApplicationSecret)
+makeClientFinished13 cparams ctx bs handKey resuming = do
+    choice <- makeCipherChoice TLS13 <$> usingHState ctx getPendingCipher
+    makeClientFinished' cparams ctx choice bs handKey resuming
+
+makeClientFinished' :: ClientParams -> Context -> CipherChoice -> ByteString -> SecretTriple HandshakeSecret -> Bool -> IO (ByteString, SecretTriple ApplicationSecret)
+makeClientFinished' cparams ctx choice bs handKey resuming = do
+    let Right hss = decodeHandshakes13 bs
+    _rtt0accepted <- runRecvHandshake13 hss $ do
+        accepted <- recvHandshake13 ctx $ expectEncryptedExtensions ctx
+        unless resuming $ recvHandshake13 ctx $ expectCertRequest cparams ctx
+        recvHandshake13hash ctx $ expectFinished choice serverHandshakeSecret
+        return accepted
+    hChSf <- transcriptHash ctx
+    cf <- encodeHandshake13 <$> makeFinished ctx usedHash clientHandshakeSecret
+    appKey <- switchToApplicationSecret ctx choice handshakeSecret hChSf
+    let applicationSecret = triBase appKey
+    setResumptionSecret ctx choice applicationSecret
+    setEstablished ctx Established
+    return (cf, appKey)
+  where
+    handshakeSecret = triBase handKey
+    ServerTrafficSecret serverHandshakeSecret = triServer handKey
+    ClientTrafficSecret clientHandshakeSecret = triClient handKey
+    usedHash = cHash choice
