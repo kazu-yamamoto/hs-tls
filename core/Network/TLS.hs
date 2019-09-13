@@ -141,6 +141,7 @@ module Network.TLS
     , decodeHandshakes13
     , Handshake13
     , ExtensionID
+    , ExtensionRaw(..)
     , EarlySecret
     , HandshakeSecret
     , ApplicationSecret
@@ -184,7 +185,7 @@ import Network.TLS.Types
 import Network.TLS.Handshake.State (HandshakeMode13(..))
 import Network.TLS.Handshake.Client (makeClientHello13, handleServerHello13, makeClientFinished13)
 import Network.TLS.Handshake.Server (makeServerHandshake13, HashChBeforeCf, ExpectFinished)
-import Network.TLS.Struct (ExtensionID)
+import Network.TLS.Struct (ExtensionID, ExtensionRaw(..))
 import Network.TLS.Struct13 (Handshake13)
 import Network.TLS.Packet13 (encodeHandshake13, decodeHandshakes13)
 import Network.TLS.KeySchedule

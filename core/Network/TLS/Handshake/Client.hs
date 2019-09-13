@@ -1078,11 +1078,11 @@ postHandshakeAuthClientWith _ _ _ =
 
 ----------------------------------------------------------------
 
-makeClientHello13 :: ClientParams -> Context -> IO (Handshake13, ByteString)
-makeClientHello13 cparams ctx = do
+makeClientHello13 :: ClientParams -> Context -> [ExtensionRaw] ->  IO (Handshake13, ByteString)
+makeClientHello13 cparams ctx addExts = do
     (ClientHello ver crand clientSession cipherIds _ chExts Nothing, _)
       <- makeClientHello cparams ctx groups Nothing
-    let clientHello13 = ClientHello13 ver crand clientSession cipherIds chExts
+    let clientHello13 = ClientHello13 ver crand clientSession cipherIds (addExts ++ chExts)
         bs = encodeHandshake13 clientHello13
     update13 ctx bs
     return (clientHello13, bs)
