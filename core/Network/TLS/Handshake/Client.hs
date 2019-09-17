@@ -1079,6 +1079,14 @@ postHandshakeAuthClientWith _ _ _ =
 
 ----------------------------------------------------------------
 
+-- | Input:
+--
+--   * 3rd: encoded QUIC parameters
+--
+--   Output:
+--
+--   * a client hello for 'handleServerHello13'
+--   * the encoded client hello for QUIC Crypto frame
 makeClientHello13 :: ClientParams -> Context -> ByteString ->  IO (Handshake13, ByteString)
 makeClientHello13 cparams ctx quicParams = do
     (ClientHello ver crand clientSession cipherIds _ chExts Nothing, _)
@@ -1091,9 +1099,16 @@ makeClientHello13 cparams ctx quicParams = do
   where
     groups = supportedGroups (ctxSupported ctx)
 
--- | The third argument is client hello.
---   The fourth argument is server hello.
---   Returning handshake keys.
+-- | Input:
+--
+--   * 3rd: a client hello
+--   * 4th: an encoded server hello
+--
+--   Output:
+--
+--   * a chosen cipher
+--   * a handshake secret
+--   * Is this resuming? for 'makeClientFinished13'
 handleServerHello13 :: ClientParams -> Context -> Handshake13 -> ByteString-> IO (Cipher, SecretTriple HandshakeSecret, Bool)
 handleServerHello13 cparams ctx (ClientHello13 _ver _crand clientSession _cipherIds chExts) bs = do
     let Right [ServerHello13 srand serverSession cipher shExts] = decodeHandshakes13 bs
@@ -1108,14 +1123,28 @@ handleServerHello13 cparams ctx (ClientHello13 _ver _crand clientSession _cipher
     switchToHandshakeSecret ctx choice groupSent
 handleServerHello13 _ _ _ _ = error "handleServerHello13"
 
+-- | Input:
+--
+--   * an encrypted extensions
+--
+--   Outputs:
+--
+--   * encoded QUIC parameters
 handleServerEncryptedExtensions :: Handshake13 -> Maybe ByteString
 handleServerEncryptedExtensions (EncryptedExtensions13 exts) =
     extensionLookup extensionID_QuicTransportParameters exts
 handleServerEncryptedExtensions _ = error "handleServerEncryptedExtensions"
 
--- | The third argument is handshake messages from encrypted extensions
---   to server finish.
---   Returning client finished and application keys.
+-- | Input:
+--
+--   * 3rd: encoded encrypted extensions and server finished
+--   * 4th: a handshake secret
+--   * 5th: is this resuming?
+--
+--   Output:
+--
+--   * a client finished
+--   * an application secret
 makeClientFinished13 :: ClientParams -> Context -> ByteString
                      -> SecretTriple HandshakeSecret -> Bool
                      -> IO (ByteString, SecretTriple ApplicationSecret)

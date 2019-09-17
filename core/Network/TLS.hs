@@ -129,20 +129,22 @@ module Network.TLS
     -- ** Exceptions
     , TLSException(..)
 
-   -- * QUIC
-    , hkdfExpandLabel
-    , hkdfExtract
-    , hashDigestSize
+    -- * QUIC
+    -- ** Handshakes for client
     , makeClientHello13
     , handleServerHello13
     , handleServerEncryptedExtensions
     , makeClientFinished13
+    -- ** Handshakes for server
     , makeServerHandshake13
+    -- ** Encoder and decoder
     , encodeHandshake13
     , decodeHandshakes13
+    -- ** Types
     , Handshake13
-    , ExtensionID
-    , ExtensionRaw(..)
+    , HashChBeforeCf
+    , ExpectFinished
+    -- ** Secrets
     , EarlySecret
     , HandshakeSecret
     , ApplicationSecret
@@ -152,9 +154,10 @@ module Network.TLS
     , ServerTrafficSecret(..)
     , SecretPair(..)
     , SecretTriple(..)
-    , HashChBeforeCf
-    , ExpectFinished
-
+    -- ** Low levels
+    , hkdfExpandLabel
+    , hkdfExtract
+    , hashDigestSize
     -- * Deprecated
     , recvData'
     , contextNewOnHandle
@@ -186,7 +189,6 @@ import Network.TLS.Types
 import Network.TLS.Handshake.State (HandshakeMode13(..))
 import Network.TLS.Handshake.Client (makeClientHello13, handleServerHello13, makeClientFinished13, handleServerEncryptedExtensions)
 import Network.TLS.Handshake.Server (makeServerHandshake13, HashChBeforeCf, ExpectFinished)
-import Network.TLS.Struct (ExtensionID, ExtensionRaw(..))
 import Network.TLS.Struct13 (Handshake13)
 import Network.TLS.Packet13 (encodeHandshake13, decodeHandshakes13)
 import Network.TLS.KeySchedule
