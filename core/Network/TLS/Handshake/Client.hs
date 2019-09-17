@@ -13,6 +13,7 @@ module Network.TLS.Handshake.Client
     , postHandshakeAuthClientWith
     , makeClientHello13
     , handleServerHello13
+    , handleServerEncryptedExtensions
     , makeClientFinished13
     ) where
 
@@ -1078,11 +1079,12 @@ postHandshakeAuthClientWith _ _ _ =
 
 ----------------------------------------------------------------
 
-makeClientHello13 :: ClientParams -> Context -> [ExtensionRaw] ->  IO (Handshake13, ByteString)
-makeClientHello13 cparams ctx addExts = do
+makeClientHello13 :: ClientParams -> Context -> ByteString ->  IO (Handshake13, ByteString)
+makeClientHello13 cparams ctx quicParams = do
     (ClientHello ver crand clientSession cipherIds _ chExts Nothing, _)
       <- makeClientHello cparams ctx groups Nothing
-    let clientHello13 = ClientHello13 ver crand clientSession cipherIds (addExts ++ chExts)
+    let chExts' = ExtensionRaw extensionID_QuicTransportParameters quicParams : chExts
+        clientHello13 = ClientHello13 ver crand clientSession cipherIds chExts'
         bs = encodeHandshake13 clientHello13
     update13 ctx bs
     return (clientHello13, bs)
@@ -1105,6 +1107,11 @@ handleServerHello13 cparams ctx (ClientHello13 _ver _crand clientSession _cipher
           _                                -> error "handleServerHello13"
     switchToHandshakeSecret ctx choice groupSent
 handleServerHello13 _ _ _ _ = error "handleServerHello13"
+
+handleServerEncryptedExtensions :: Handshake13 -> Maybe ByteString
+handleServerEncryptedExtensions (EncryptedExtensions13 exts) =
+    extensionLookup extensionID_QuicTransportParameters exts
+handleServerEncryptedExtensions _ = error "handleServerEncryptedExtensions"
 
 -- | The third argument is handshake messages from encrypted extensions
 --   to server finish.

@@ -135,6 +135,7 @@ module Network.TLS
     , hashDigestSize
     , makeClientHello13
     , handleServerHello13
+    , handleServerEncryptedExtensions
     , makeClientFinished13
     , makeServerHandshake13
     , encodeHandshake13
@@ -183,12 +184,13 @@ import Network.TLS.Session
 import Network.TLS.X509
 import Network.TLS.Types
 import Network.TLS.Handshake.State (HandshakeMode13(..))
-import Network.TLS.Handshake.Client (makeClientHello13, handleServerHello13, makeClientFinished13)
+import Network.TLS.Handshake.Client (makeClientHello13, handleServerHello13, makeClientFinished13, handleServerEncryptedExtensions)
 import Network.TLS.Handshake.Server (makeServerHandshake13, HashChBeforeCf, ExpectFinished)
 import Network.TLS.Struct (ExtensionID, ExtensionRaw(..))
 import Network.TLS.Struct13 (Handshake13)
 import Network.TLS.Packet13 (encodeHandshake13, decodeHandshakes13)
 import Network.TLS.KeySchedule
+
 import Data.X509 (PubKey(..), PrivKey(..))
 import Data.X509.Validation hiding (HostName)
 import Data.ByteString as B
