@@ -22,6 +22,7 @@ import Network.TLS.Imports
 import Network.TLS.Packet
 import Network.TLS.Parameters
 import Network.TLS.Record
+import qualified Network.TLS.Record.Layer as RL
 import Network.TLS.State
 import Network.TLS.Struct
 import Network.TLS.Types (Role(..))
@@ -40,7 +41,7 @@ encodePacket ctx pkt = do
     let pt = packetType pkt
         mkRecord bs = Record pt ver (fragmentPlaintext bs)
     records <- map mkRecord <$> packetToFragments ctx 16384 pkt
-    bs <- fmap B.concat <$> forEitherM records (encodeRecord ctx)
+    bs <- fmap B.concat <$> forEitherM records (contextEncodeRecord ctx)
     when (pkt == ChangeCipherSpec) $ switchTxEncryption ctx
     return bs
 
@@ -101,3 +102,8 @@ updateHandshake ctx role hs = do
     return encoded
   where
     encoded = encodeHandshake hs
+
+contextEncodeRecord :: Context -> Record Plaintext -> IO (Either TLSError ByteString)
+contextEncodeRecord ctx = case ctxRecordLayer ctx of
+  Nothing -> encodeRecord ctx
+  Just rl -> RL.encodeRecord rl
