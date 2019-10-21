@@ -183,6 +183,7 @@ contextNew backend params = liftIO $ do
             , ctxCertRequests     = crs
             , ctxKeyLogger        = debugKeyLogger debug
             , ctxRecordLayer      = Nothing
+            , ctxHandshakeSync    = Nothing
             }
 
 -- | create a new context on an handle.
