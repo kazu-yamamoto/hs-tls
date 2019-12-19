@@ -314,10 +314,11 @@ handshakeClient' cparams ctx groups mparams = do
                 -- But HandshakeDigestContext is not created yet.
                 earlyKey <- calculateEarlySecret ctx choice (Right earlySecret) False
                 let ces@(ClientTrafficSecret clientEarlySecret) = pairClient earlyKey
-                runPacketFlight ctx [] $ sendChangeCipherSpec13 ctx
-                setTxState ctx usedHash usedCipher clientEarlySecret
-                mapChunks_ 16384 (sendPacket13 ctx . AppData13) earlyData
-                usingHState ctx $ setTLS13RTT0Status RTT0Sent
+                when (earlyData /= "") $ do
+                    runPacketFlight ctx [] $ sendChangeCipherSpec13 ctx
+                    setTxState ctx usedHash usedCipher clientEarlySecret
+                    mapChunks_ 16384 (sendPacket13 ctx . AppData13) earlyData
+                    usingHState ctx $ setTLS13RTT0Status RTT0Sent
                 return ces
 
         recvServerHello clientSession sentExts = runRecvState ctx recvState
