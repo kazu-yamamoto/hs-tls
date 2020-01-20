@@ -20,7 +20,7 @@ library
                      , auto-update
                      , basement
                      , bytestring
-                     , clock
+                     , hourglass
                      , memory
                      , psqueues >= 0.2.3
                      , tls

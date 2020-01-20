@@ -15,10 +15,11 @@ module Network.TLS.SessionManager (
   ) where
 
 import Basement.Block (Block)
-import Data.ByteArray (convert)
 import Control.Exception (assert)
 import Control.Reaper
+import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
+import qualified Data.Hourglass as T
 import Data.IORef
 import Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as Q
@@ -26,7 +27,7 @@ import Network.TLS
 #if !MIN_VERSION_tls(1,5,0)
 import Network.TLS.Compression
 #endif
-import qualified System.Clock as C
+import qualified Time.System as T
 
 import Network.TLS.Imports
 
@@ -113,7 +114,8 @@ data SessionDataCopy = SessionDataCopy
 #endif
     deriving (Show,Eq)
 
-type Sec = Int64
+type Sec = T.Elapsed
+type Lifetime = T.Seconds
 type Value = (SessionDataCopy, IORef Availability)
 type DB = OrdPSQ SessionIDCopy Sec Value
 type Item = (SessionIDCopy, Sec, Value, Operation)
@@ -157,7 +159,7 @@ cons _   (k,_,_,Del) db = Q.delete k db
 
 clean :: DB -> IO (DB -> DB)
 clean olddb = do
-    currentTime <- C.sec <$> C.getTime C.Monotonic
+    currentTime <- T.timeCurrent
     let !pruned = snd $ Q.atMostView currentTime olddb
     return $ merge pruned
   where
@@ -170,11 +172,11 @@ clean olddb = do
 
 ----------------------------------------------------------------
 
-establish :: Reaper DB Item -> Sec
+establish :: Reaper DB Item -> Lifetime
           -> SessionID -> SessionData -> IO ()
 establish reaper lifetime k sd = do
     ref <- newIORef Fresh
-    !p <- (+ lifetime) . C.sec <$> C.getTime C.Monotonic
+    !p <- (`T.timeAdd` lifetime) <$> T.timeCurrent
     let !v = (sd',ref)
     reaperAdd reaper (k',p,v,Add)
   where
