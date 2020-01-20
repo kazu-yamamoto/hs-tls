@@ -14,12 +14,14 @@ cabal-version:       >= 1.10
 
 library
   exposed-modules:     Network.TLS.SessionManager
+                       Network.TLS.SessionTicket
   other-modules:       Network.TLS.Imports
   -- other-extensions:
   build-depends:       base >= 4.7 && < 5
                      , auto-update
                      , basement
                      , bytestring
+                     , crypto-token
                      , hourglass
                      , memory
                      , psqueues >= 0.2.3
