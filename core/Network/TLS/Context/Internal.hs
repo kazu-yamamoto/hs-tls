@@ -131,7 +131,7 @@ data Context = Context
     , ctxPendingActions   :: IORef [PendingAction]
     , ctxCertRequests     :: IORef [Handshake13]  -- ^ pending PHA requests
     , ctxKeyLogger        :: String -> IO ()
-    , ctxRecordLayer      :: Maybe RecordLayer
+    , ctxRecordLayer      :: RecordLayer
     , ctxHandshakeSync    :: HandshakeSync
     }
 
