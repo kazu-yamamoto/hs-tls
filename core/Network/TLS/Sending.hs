@@ -36,13 +36,14 @@ import Data.IORef
 
 -- | encodePacket transform a packet into marshalled data related to current state
 -- and updating state on the go
-encodePacket :: Context -> Packet -> IO (Either TLSError ByteString)
-encodePacket ctx pkt = do
+encodePacket :: Monoid bytes
+             => Context -> RecordLayer bytes -> Packet -> IO (Either TLSError bytes)
+encodePacket ctx recordLayer pkt = do
     (ver, _) <- decideRecordVersion ctx
     let pt = packetType pkt
         mkRecord bs = Record pt ver (fragmentPlaintext bs)
     records <- map mkRecord <$> packetToFragments ctx 16384 pkt
-    bs <- fmap B.concat <$> forEitherM records (recordEncode $ ctxRecordLayer ctx)
+    bs <- fmap mconcat <$> forEitherM records (recordEncode recordLayer)
     when (pkt == ChangeCipherSpec) $ switchTxEncryption ctx
     return bs
 
