@@ -291,15 +291,15 @@ instance Arbitrary GGP where
 arbitraryGroupPair :: Gen GGP
 arbitraryGroupPair = do
     (serverECGroups, clientECGroups) <-
-        arbitraryGroupPairWith defaultECGroup otherKnownECGroups
+        arbitraryGroupPairWith $ delete FFDHE2048 $ delete P256 knownGroups
     serverGroups <- shuffle serverECGroups
     clientGroups <- shuffle clientECGroups
     return $ GGP clientGroups serverGroups
   where
-    arbitraryGroupPairWith e es = do
+    arbitraryGroupPairWith es = do
         s <- sublistOf es
         c <- sublistOf es
-        return (e : s, e : c)
+        return (P256 : FFDHE2048 : s, P256 : FFDHE2048 : c)
 
 ----------------------------------------------------------------
 
