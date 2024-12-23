@@ -232,6 +232,8 @@ getServerParams creds groups sm keyLog clientAuth mstore (ekey, ecnf) printError
     supported =
         defaultSupported
             { supportedGroups = groups
+            , supportedExtendedMainSecret = AllowEMS
+            , supportedClientInitiatedRenegotiation = True
             }
     hooks =
         defaultServerHooks
