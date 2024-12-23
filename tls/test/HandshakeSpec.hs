@@ -386,7 +386,16 @@ handshake_server_key_usage :: [ExtKeyUsageFlag] -> IO ()
 handshake_server_key_usage usageFlags = do
     tls13 <- generate arbitrary
     let versions = if tls13 then [TLS13] else [TLS12]
-        ciphers = ciphersuite_all
+        ciphers =
+            delete
+                cipher_RSA_WITH_AES_256_CBC_SHA
+                $ delete
+                    cipher_RSA_WITH_AES_128_CBC_SHA
+                $ delete
+                    cipher_RSA_WITH_AES_128_GCM_SHA256
+                $ delete
+                    cipher_RSA_WITH_AES_256_GCM_SHA384
+                    ciphersuite_all
     (clientParam, serverParam) <-
         generate $
             arbitraryPairParamsWithVersionsAndCiphers
