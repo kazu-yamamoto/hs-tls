@@ -177,6 +177,8 @@ getServerParams creds groups sm keyLog mstore =
     supported =
         defaultSupported
             { supportedGroups = groups
+            , supportedExtendedMainSecret = AllowEMS
+            , supportedClientInitiatedRenegotiation = True
             }
     hooks =
         defaultServerHooks
