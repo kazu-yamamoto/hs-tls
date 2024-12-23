@@ -38,6 +38,13 @@ module Network.TLS.Extra.Cipher (
     cipher_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
     cipher_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 
+    -- * Weak
+    cipher_RSA_WITH_AES_128_CBC_SHA,
+    cipher_RSA_WITH_AES_256_CBC_SHA,
+    cipher_RSA_WITH_AES_128_GCM_SHA256,
+    cipher_RSA_WITH_AES_256_GCM_SHA384,
+    cipher_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+
     -- * Deprecated names
 
     -- ** RFC 5288
@@ -76,6 +83,7 @@ import Crypto.Error
 import qualified Crypto.MAC.Poly1305 as Poly1305
 import Crypto.System.CPU
 import qualified Data.ByteString as B
+import Data.Maybe
 import Data.Tuple (swap)
 
 import Network.TLS.Cipher
@@ -120,7 +128,6 @@ complement_all :: [Cipher]
 complement_all =
     [ cipher_ECDHE_ECDSA_WITH_AES_128_CCM_8
     , cipher_ECDHE_ECDSA_WITH_AES_256_CCM_8
-    , cipher13_AES_128_CCM_8_SHA256
     ]
 
 -- | The strongest ciphers supported.  For ciphers with PFS, AEAD and SHA2, we
@@ -157,6 +164,22 @@ sets_strong =
         [cipher_ECDHE_RSA_WITH_AES_128_GCM_SHA256]
         []
         []
+    , SetOther
+        [ cipher_ECDHE_RSA_WITH_AES_128_CBC_SHA
+        , cipher_DHE_RSA_WITH_AES_128_CBC_SHA
+        , cipher_RSA_WITH_AES_256_CBC_SHA
+        , cipher_RSA_WITH_AES_128_CBC_SHA
+        ]
+    , SetAead
+        [cipher_DHE_RSA_WITH_AES_128_GCM_SHA256]
+        []
+        []
+    , SetAead
+        [ cipher_RSA_WITH_AES_128_GCM_SHA256
+        , cipher_RSA_WITH_AES_256_GCM_SHA384
+        ]
+        [cipher_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256]
+        []
     , -- TLS13 (listed at the end but version is negotiated first)
       SetAead
         [cipher13_AES_256_GCM_SHA384]
@@ -165,7 +188,7 @@ sets_strong =
     , SetAead
         [cipher13_AES_128_GCM_SHA256]
         []
-        [cipher13_AES_128_CCM_SHA256]
+        [cipher13_AES_128_CCM_SHA256, cipher13_AES_128_CCM_8_SHA256]
     ]
 
 -- | DHE-RSA cipher suite.  This only includes ciphers bound specifically to
@@ -175,7 +198,6 @@ sets_strong =
 ciphersuite_dhe_rsa :: [Cipher]
 ciphersuite_dhe_rsa =
     [ cipher_DHE_RSA_WITH_AES_256_GCM_SHA384
-    , cipher_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256
     , cipher_DHE_RSA_WITH_AES_128_GCM_SHA256
     ]
 
@@ -561,6 +583,85 @@ cipher_DHE_RSA_CHACHA20POLY1305_SHA256 = cipher_DHE_RSA_WITH_CHACHA20_POLY1305_S
     #-}
 
 ----------------------------------------------------------------
+-- for tlsfuzzer
+
+cipher_RSA_WITH_AES_128_CBC_SHA :: Cipher
+cipher_RSA_WITH_AES_128_CBC_SHA =
+    Cipher
+        { cipherID = 0x002F
+        , cipherName = "TLS_RSA_WITH_AES_128_CBC_SHA"
+        , cipherBulk = bulk_aes128
+        , cipherHash = SHA1
+        , cipherPRFHash = Nothing
+        , cipherKeyExchange = CipherKeyExchange_RSA
+        , cipherMinVer = Just SSL3
+        }
+
+cipher_RSA_WITH_AES_256_CBC_SHA :: Cipher
+cipher_RSA_WITH_AES_256_CBC_SHA =
+    Cipher
+        { cipherID = 0x0035
+        , cipherName = "TLS_RSA_WITH_AES_256_CBC_SHA"
+        , cipherBulk = bulk_aes256
+        , cipherHash = SHA1
+        , cipherPRFHash = Nothing
+        , cipherKeyExchange = CipherKeyExchange_RSA
+        , cipherMinVer = Just SSL3
+        }
+
+cipher_ECDHE_RSA_WITH_AES_128_CBC_SHA :: Cipher
+cipher_ECDHE_RSA_WITH_AES_128_CBC_SHA =
+    Cipher
+        { cipherID = 0xC013
+        , cipherName = "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
+        , cipherBulk = bulk_aes128
+        , cipherHash = SHA1
+        , cipherPRFHash = Nothing
+        , cipherKeyExchange = CipherKeyExchange_ECDHE_RSA
+        , cipherMinVer = Just TLS10
+        }
+
+-- | AESGCM cipher (128 bit key), RSA key exchange.
+-- The SHA256 digest is used as a PRF, not as a MAC.
+cipher_RSA_WITH_AES_128_GCM_SHA256 :: Cipher
+cipher_RSA_WITH_AES_128_GCM_SHA256 =
+    Cipher
+        { cipherID = 0x009C
+        , cipherName = "TLS_RSA_WITH_AES_128_GCM_SHA256"
+        , cipherBulk = bulk_aes128gcm
+        , cipherHash = SHA256
+        , cipherPRFHash = Just SHA256
+        , cipherKeyExchange = CipherKeyExchange_RSA
+        , cipherMinVer = Just TLS12
+        }
+
+-- | AESCCM cipher (256 bit key), RSA key exchange.
+-- The SHA256 digest is used as a PRF, not as a MAC.
+cipher_RSA_WITH_AES_256_GCM_SHA384 :: Cipher
+cipher_RSA_WITH_AES_256_GCM_SHA384 =
+    Cipher
+        { cipherID = 0x009D
+        , cipherName = "TLS_RSA_WITH_AES_256_GCM_SHA384"
+        , cipherBulk = bulk_aes256gcm
+        , cipherHash = SHA384
+        , cipherPRFHash = Just SHA384
+        , cipherKeyExchange = CipherKeyExchange_RSA
+        , cipherMinVer = Just TLS12
+        }
+
+cipher_DHE_RSA_WITH_AES_128_CBC_SHA :: Cipher
+cipher_DHE_RSA_WITH_AES_128_CBC_SHA =
+    Cipher
+        { cipherID = 0x0033
+        , cipherName = "TLS_DHE_RSA_WITH_AES_128_CBC_SHA"
+        , cipherBulk = bulk_aes128
+        , cipherHash = SHA1
+        , cipherPRFHash = Nothing
+        , cipherKeyExchange = CipherKeyExchange_DHE_RSA
+        , cipherMinVer = Nothing
+        }
+
+----------------------------------------------------------------
 ----------------------------------------------------------------
 
 data CipherSet
@@ -806,3 +907,72 @@ bulk_aes128ccm_13 = bulk_aes128ccm{bulkIVSize = 12, bulkExplicitIV = 0}
 
 bulk_aes128ccm8_13 :: Bulk
 bulk_aes128ccm8_13 = bulk_aes128ccm8{bulkIVSize = 12, bulkExplicitIV = 0}
+
+----------------------------------------------------------------
+-- for tlsfuzzer
+
+bulk_aes128 :: Bulk
+bulk_aes128 =
+    Bulk
+        { bulkName = "AES128"
+        , bulkKeySize = 16
+        , bulkIVSize = 16
+        , bulkExplicitIV = 0
+        , bulkAuthTagLen = 0
+        , bulkBlockSize = 16
+        , bulkF = BulkBlockF aes128cbc
+        }
+
+bulk_aes256 :: Bulk
+bulk_aes256 =
+    Bulk
+        { bulkName = "AES256"
+        , bulkKeySize = 32
+        , bulkIVSize = 16
+        , bulkExplicitIV = 0
+        , bulkAuthTagLen = 0
+        , bulkBlockSize = 16
+        , bulkF = BulkBlockF aes256cbc
+        }
+
+aes128cbc :: BulkDirection -> BulkKey -> BulkBlock
+aes128cbc BulkEncrypt key =
+    let ctx = noFail (cipherInit key) :: AES128
+     in ( \iv input ->
+            let output = cbcEncrypt ctx (makeIV_ iv) input
+             in ( output
+                , takelast 16 output
+                )
+        )
+aes128cbc BulkDecrypt key =
+    let ctx = noFail (cipherInit key) :: AES128
+     in ( \iv input ->
+            let output = cbcDecrypt ctx (makeIV_ iv) input
+             in ( output
+                , takelast 16 input
+                )
+        )
+
+aes256cbc :: BulkDirection -> BulkKey -> BulkBlock
+aes256cbc BulkEncrypt key =
+    let ctx = noFail (cipherInit key) :: AES256
+     in ( \iv input ->
+            let output = cbcEncrypt ctx (makeIV_ iv) input
+             in ( output
+                , takelast 16 output
+                )
+        )
+aes256cbc BulkDecrypt key =
+    let ctx = noFail (cipherInit key) :: AES256
+     in ( \iv input ->
+            let output = cbcDecrypt ctx (makeIV_ iv) input
+             in ( output
+                , takelast 16 input
+                )
+        )
+
+makeIV_ :: BlockCipher a => B.ByteString -> IV a
+makeIV_ = fromMaybe (error "makeIV_") . makeIV
+
+takelast :: Int -> B.ByteString -> B.ByteString
+takelast i b = B.drop (B.length b - i) b
