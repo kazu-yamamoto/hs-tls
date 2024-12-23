@@ -147,6 +147,8 @@ getServerParams creds groups sm keyLog =
     supported =
         defaultSupported
             { supportedGroups = groups
+            , supportedExtendedMainSecret = AllowEMS
+            , supportedClientInitiatedRenegotiation = True
             }
     hooks = defaultServerHooks{onALPNClientSuggest = Just chooseALPN}
     debug = defaultDebugParams{debugKeyLogger = keyLog}
