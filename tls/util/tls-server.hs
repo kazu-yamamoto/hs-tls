@@ -211,10 +211,16 @@ getServerParams creds groups sm keyLog clientAuth mstore (ekey, ecnf) =
             { onALPNClientSuggest = Just chooseALPN
             , onClientCertificate = case mstore of
                 Nothing -> onClientCertificate defaultServerHooks
-                Just _ ->
-                    validateClientCertificate (sharedCAStore shared) (sharedValidationCache shared)
+                Just _ -> checkCertificate
             }
     debug = defaultDebugParams{debugKeyLogger = keyLog}
+    checkCertificate cc
+        | isNullCertificateChain cc = return CertificateUsageAccept
+        | otherwise =
+            validateClientCertificate
+                (sharedCAStore shared)
+                (sharedValidationCache shared)
+                cc
 
 chooseALPN :: [ByteString] -> IO ByteString
 chooseALPN protos
