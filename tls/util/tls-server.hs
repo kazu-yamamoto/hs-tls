@@ -185,8 +185,13 @@ getServerParams creds groups sm keyLog mstore =
             { onALPNClientSuggest = Just chooseALPN
             , onClientCertificate = case mstore of
                 Nothing -> onClientCertificate defaultServerHooks
-                Just _ ->
-                    validateClientCertificate (sharedCAStore shared) (sharedValidationCache shared)
+                Just _ -> \cc -> case cc of
+                    CertificateChain [] -> return CertificateUsageAccept
+                    _ ->
+                        validateClientCertificate
+                            (sharedCAStore shared)
+                            (sharedValidationCache shared)
+                            cc
             }
     debug = defaultDebugParams{debugKeyLogger = keyLog}
 
