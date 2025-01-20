@@ -45,8 +45,7 @@ defaultOptions =
         , optShow = False
         , optKeyLogFile = Nothing
         , optTrustedAnchor = Nothing
-        , -- excluding FFDHE8192 for retry
-          optGroups = FFDHE8192 `delete` supportedGroups defaultSupported
+        , optGroups = supportedGroups defaultSupported
         , optCertFile = "servercert.pem"
         , optKeyFile = "serverkey.pem"
         , optECHConfigFile = Nothing
