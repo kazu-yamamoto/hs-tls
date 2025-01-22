@@ -161,6 +161,7 @@ getServerParams creds groups sm keyLog clientAuth mstore =
         , serverShared = shared
         , serverHooks = hooks
         , serverDebug = debug
+        , serverLimit = limit
         , serverEarlyDataSize = 2048
         , serverWantClientCert = clientAuth
         , serverDHEParams -- ffdhe2048
@@ -174,6 +175,10 @@ getServerParams creds groups sm keyLog clientAuth mstore =
                     }
         }
   where
+    limit =
+        defaultLimit
+            { limitRecordSize = Just 16384
+            }
     shared =
         defaultShared
             { sharedCredentials = creds
