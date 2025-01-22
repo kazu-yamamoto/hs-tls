@@ -321,12 +321,17 @@ getClientParams Options{..} serverName port sm mstore onCertReq =
         , clientUseServerNameIndication = True
         , clientShared = shared
         , clientHooks = hooks
+        , clientLimit = limit
         , clientDebug = debug
         }
   where
     groups
         | optRetry = FFDHE8192 : optGroups
         | otherwise = optGroups
+    limit =
+        defaultLimit
+            { limitRecordSize = Just 8192
+            }
     shared =
         defaultShared
             { sharedSessionManager = sm
