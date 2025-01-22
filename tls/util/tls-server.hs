@@ -187,6 +187,7 @@ getServerParams creds groups sm keyLog clientAuth mstore (ekey, ecnf) =
         , serverShared = shared
         , serverHooks = hooks
         , serverDebug = debug
+        , serverLimit = limit
         , serverEarlyDataSize = 2048
         , serverWantClientCert = clientAuth
         , serverECHKey = ekey
@@ -201,6 +202,10 @@ getServerParams creds groups sm keyLog clientAuth mstore (ekey, ecnf) =
                     }
         }
   where
+    limit =
+        defaultLimit
+            { limitRecordSize = Just 16384
+            }
     shared =
         defaultShared
             { sharedCredentials = creds
