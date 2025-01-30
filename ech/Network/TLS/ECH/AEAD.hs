@@ -1,10 +1,11 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Network.TLS.ECH.AEAD where
 
 import Crypto.Cipher.AES
-import qualified Crypto.Cipher.ChaChaPoly1305 as ChaChaPoly1305
-import Crypto.Cipher.Types (AuthTag (..))
+import qualified Crypto.Cipher.ChaChaPoly1305 as CCP
+import Crypto.Cipher.Types (AEAD (..), AEADModeImpl (..), AuthTag (..))
 import qualified Crypto.Cipher.Types as Cipher
 import Crypto.Error
 import qualified Crypto.MAC.Poly1305 as Poly1305
@@ -23,13 +24,13 @@ type AssociatedData = ByteString
 type PlainText = ByteString
 type CipherText = ByteString -- including AuthTag
 
-class AEAD a where
-    initialize :: Key -> Nonce -> a
-    seal :: a -> AssociatedData -> PlainText -> CipherText
-    open :: a -> AssociatedData -> CipherText -> Either HpkeError PlainText
+class Aead a where
+    initialize :: Key -> Nonce -> AEAD a
+    seal :: AEAD a -> AssociatedData -> PlainText -> CipherText
+    open :: AEAD a -> AssociatedData -> CipherText -> Either HpkeError PlainText
 
 mkSeal
-    :: (st -> AEADEncrypt)
+    :: (st -> AeadEncrypt)
     -> st
     -> AssociatedData
     -> PlainText
@@ -39,7 +40,7 @@ mkSeal enc st aad plain = cipher <> convert tag
     (cipher, AuthTag tag) = enc st aad plain
 
 mkOpen
-    :: (st -> AEADDecrypt)
+    :: (st -> AeadDecrypt)
     -> Int
     -> st
     -> AssociatedData
@@ -55,14 +56,14 @@ mkOpen dec len st aad cipher
 
 ----------------------------------------------------------------
 
-type AEADEncrypt =
+type AeadEncrypt =
     forall a t
      . ( ByteArrayAccess a
        , ByteArray t
        )
     => a -> t -> (t, AuthTag)
 
-type AEADDecrypt =
+type AeadDecrypt =
     forall a t
      . ( ByteArrayAccess a
        , ByteArray t
@@ -71,78 +72,88 @@ type AEADDecrypt =
 
 ----------------------------------------------------------------
 
-instance AEAD AEAD_AES_128_GCM where
+instance Aead AES128 where
     initialize = initAes128gcm
     seal = mkSeal encryptAes128gcm
     open = mkOpen decryptAes128gcm aes128tagLength
 
-newtype AEAD_AES_128_GCM = AEAD_AES_128_GCM (Cipher.AEAD AES128)
-
-initAes128gcm :: (ByteArray k, ByteArrayAccess n) => k -> n -> AEAD_AES_128_GCM
-initAes128gcm key nonce = AEAD_AES_128_GCM st1
+initAes128gcm :: (ByteArray k, ByteArrayAccess n) => k -> n -> AEAD AES128
+initAes128gcm key nonce = st1
   where
     st0 = noFail (Cipher.cipherInit key) :: AES128
     st1 = noFail $ Cipher.aeadInit Cipher.AEAD_GCM st0 nonce
 
-encryptAes128gcm :: AEAD_AES_128_GCM -> AEADEncrypt
-encryptAes128gcm (AEAD_AES_128_GCM st) = encrypt
+encryptAes128gcm :: AEAD AES128 -> AeadEncrypt
+encryptAes128gcm st = encrypt
   where
-    encrypt aad plain = swap $ Cipher.aeadSimpleEncrypt st aad plain aes128tagLength
+    encrypt aad plain = simpleEncrypt st aad plain aes128tagLength
 
-decryptAes128gcm :: AEAD_AES_128_GCM -> AEADDecrypt
-decryptAes128gcm (AEAD_AES_128_GCM st) = decrypt
+decryptAes128gcm :: AEAD AES128 -> AeadDecrypt
+decryptAes128gcm st = decrypt
   where
-    decrypt aad cipher = simpleDecrypt st aad cipher 16
-
-simpleDecrypt
-    :: (ByteArrayAccess a, ByteArray t)
-    => Cipher.AEAD cipher -> a -> t -> Int -> (t, AuthTag)
-simpleDecrypt st aad cipher taglen = (plain, tag)
-  where
-    st2 = Cipher.aeadAppendHeader st aad
-    (plain, st3) = Cipher.aeadDecrypt st2 cipher
-    tag = Cipher.aeadFinalize st3 taglen
+    decrypt aad cipher = simpleDecrypt st aad cipher aes128tagLength
 
 aes128tagLength :: Int
 aes128tagLength = 16
 
 ----------------------------------------------------------------
 
-instance AEAD AEAD_ChaCha20Poly1305 where
+instance Aead ChaCha20Poly1305 where
     initialize = initChacha20poly1305
     seal = mkSeal encryptChacha20poly1305
     open = mkOpen decryptChacha20poly1305 chacha20poly1305tagLength
 
-newtype AEAD_ChaCha20Poly1305 = AEAD_ChaCha20Poly1305 ChaChaPoly1305.State
+type ChaCha20Poly1305 = CCP.State
 
 initChacha20poly1305
-    :: (ByteArrayAccess k, ByteArrayAccess n) => k -> n -> AEAD_ChaCha20Poly1305
-initChacha20poly1305 key nonce = AEAD_ChaCha20Poly1305 st
+    :: (ByteArrayAccess k, ByteArrayAccess n) => k -> n -> AEAD ChaCha20Poly1305
+initChacha20poly1305 key nonce = st
   where
-    st = noFail (ChaChaPoly1305.nonce12 nonce >>= ChaChaPoly1305.initialize key)
+    st = aeadChacha20poly1305Init key nonce
 
-encryptChacha20poly1305 :: AEAD_ChaCha20Poly1305 -> AEADEncrypt
-encryptChacha20poly1305 (AEAD_ChaCha20Poly1305 st) = encrypt
+aeadChacha20poly1305Init
+    :: (ByteArrayAccess k, ByteArrayAccess n)
+    => k -> n -> AEAD ChaCha20Poly1305
+aeadChacha20poly1305Init key nonce = AEAD model st0
   where
-    encrypt aad plain = (cipher, AuthTag tag)
-      where
-        st2 = ChaChaPoly1305.finalizeAAD $ ChaChaPoly1305.appendAAD aad st
-        (cipher, st3) = ChaChaPoly1305.encrypt plain st2
-        Poly1305.Auth tag = ChaChaPoly1305.finalize st3
+    st0 = noFail (CCP.nonce12 nonce >>= CCP.initialize key)
+    model =
+        AEADModeImpl
+            { aeadImplAppendHeader = \st aad -> CCP.finalizeAAD $ CCP.appendAAD aad st
+            , aeadImplEncrypt = \st plain -> CCP.encrypt plain st
+            , aeadImplDecrypt = \st cipher -> CCP.decrypt cipher st
+            , aeadImplFinalize = \st _ -> let Poly1305.Auth tag = CCP.finalize st in AuthTag tag
+            }
 
-decryptChacha20poly1305 :: AEAD_ChaCha20Poly1305 -> AEADDecrypt
-decryptChacha20poly1305 (AEAD_ChaCha20Poly1305 st) = decrypt
+encryptChacha20poly1305 :: AEAD ChaCha20Poly1305 -> AeadEncrypt
+encryptChacha20poly1305 st = encrypt
   where
-    decrypt aad cipher = (plain, AuthTag tag)
-      where
-        st2 = ChaChaPoly1305.finalizeAAD $ ChaChaPoly1305.appendAAD aad st
-        (plain, st3) = ChaChaPoly1305.decrypt cipher st2
-        Poly1305.Auth tag = ChaChaPoly1305.finalize st3
+    encrypt aad plain = simpleEncrypt st aad plain chacha20poly1305tagLength
+
+decryptChacha20poly1305 :: AEAD ChaCha20Poly1305 -> AeadDecrypt
+decryptChacha20poly1305 st = decrypt
+  where
+    decrypt aad cipher = simpleDecrypt st aad cipher chacha20poly1305tagLength
 
 chacha20poly1305tagLength :: Int
 chacha20poly1305tagLength = 16
 
 ----------------------------------------------------------------
+
+simpleEncrypt
+    :: (ByteArrayAccess a, ByteArray t)
+    => AEAD cipher -> a -> t -> Int -> (t, AuthTag)
+simpleEncrypt st aad plain taglen =
+    swap $ Cipher.aeadSimpleEncrypt st aad plain taglen
+
+simpleDecrypt
+    :: (ByteArrayAccess a, ByteArray t)
+    => AEAD cipher -> a -> t -> Int -> (t, AuthTag)
+simpleDecrypt st aad cipher taglen = (plain, tag)
+  where
+    st2 = Cipher.aeadAppendHeader st aad
+    (plain, st3) = Cipher.aeadDecrypt st2 cipher
+    tag = Cipher.aeadFinalize st3 taglen
 
 noFail :: CryptoFailable a -> a
 noFail = throwCryptoError
