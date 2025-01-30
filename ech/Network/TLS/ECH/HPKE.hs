@@ -20,59 +20,59 @@ data HpkeError
 
 -- should be included in "crypton"?
 
-newtype HpkeKemId = HpkeKemId Word16 deriving (Eq)
+newtype KEM_ID = KEM_ID {fromKEM_ID :: Word16} deriving (Eq)
 
 {- FOURMOLU_DISABLE -}
-pattern DHKEM_P_256_HKDF_SHA256  :: HpkeKemId
-pattern DHKEM_P_256_HKDF_SHA256   = HpkeKemId 0x0010
-pattern DHKEM_P_384_HKDF_SHA384  :: HpkeKemId
-pattern DHKEM_P_384_HKDF_SHA384   = HpkeKemId 0x0011
-pattern DHKEM_P_512_HKDF_SHA512  :: HpkeKemId
-pattern DHKEM_P_512_HKDF_SHA512   = HpkeKemId 0x0012
-pattern DHKEM_X25519_HKDF_SHA256 :: HpkeKemId
-pattern DHKEM_X25519_HKDF_SHA256  = HpkeKemId 0x0020
-pattern DHKEM_X448_HKDF_SHA512   :: HpkeKemId
-pattern DHKEM_X448_HKDF_SHA512    = HpkeKemId 0x0021
+pattern DHKEM_P_256_HKDF_SHA256  :: KEM_ID
+pattern DHKEM_P_256_HKDF_SHA256   = KEM_ID 0x0010
+pattern DHKEM_P_384_HKDF_SHA384  :: KEM_ID
+pattern DHKEM_P_384_HKDF_SHA384   = KEM_ID 0x0011
+pattern DHKEM_P_512_HKDF_SHA512  :: KEM_ID
+pattern DHKEM_P_512_HKDF_SHA512   = KEM_ID 0x0012
+pattern DHKEM_X25519_HKDF_SHA256 :: KEM_ID
+pattern DHKEM_X25519_HKDF_SHA256  = KEM_ID 0x0020
+pattern DHKEM_X448_HKDF_SHA512   :: KEM_ID
+pattern DHKEM_X448_HKDF_SHA512    = KEM_ID 0x0021
 
-instance Show HpkeKemId where
+instance Show KEM_ID where
     show DHKEM_P_256_HKDF_SHA256  = "DHKEM(P-256, HKDF-SHA256)"
     show DHKEM_P_384_HKDF_SHA384  = "DHKEM(P-384, HKDF-SHA384)"
     show DHKEM_P_512_HKDF_SHA512  = "DHKEM(P-521, HKDF-SHA512)"
     show DHKEM_X25519_HKDF_SHA256 = "DHKEM(X25519, HKDF-SHA256)"
     show DHKEM_X448_HKDF_SHA512   = "DHKEM(X448, HKDF-SHA512)"
-    show (HpkeKemId n)            = "DHKEM 0x" ++ printf "%04x" n
+    show (KEM_ID n)               = "DHKEM_ID 0x" ++ printf "%04x" n
 {- FOURMOLU_ENABLE -}
 
-newtype HpkeKdfId = HpkeKdfId Word16 deriving (Eq)
+newtype KDF_ID = KDF_ID Word16 deriving (Eq)
 
 {- FOURMOLU_DISABLE -}
-pattern HKDF_SHA256 :: HpkeKdfId
-pattern HKDF_SHA256  = HpkeKdfId 0x0001
-pattern HKDF_SHA384 :: HpkeKdfId
-pattern HKDF_SHA384  = HpkeKdfId 0x0002
-pattern HKDF_SHA512 :: HpkeKdfId
-pattern HKDF_SHA512  = HpkeKdfId 0x0003
+pattern HKDF_SHA256 :: KDF_ID
+pattern HKDF_SHA256  = KDF_ID 0x0001
+pattern HKDF_SHA384 :: KDF_ID
+pattern HKDF_SHA384  = KDF_ID 0x0002
+pattern HKDF_SHA512 :: KDF_ID
+pattern HKDF_SHA512  = KDF_ID 0x0003
 
-instance Show HpkeKdfId where
-    show HKDF_SHA256   = "HKDF_SHA256"
-    show HKDF_SHA384   = "HKDF_SHA384"
-    show HKDF_SHA512   = "HKDF_SHA512"
-    show (HpkeKdfId n) = "HKDF 0x" ++ printf "%04x" n
+instance Show KDF_ID where
+    show HKDF_SHA256 = "HKDF_SHA256"
+    show HKDF_SHA384 = "HKDF_SHA384"
+    show HKDF_SHA512 = "HKDF_SHA512"
+    show (KDF_ID n)  = "HKDF_ID 0x" ++ printf "%04x" n
 {- FOURMOLU_ENABLE -}
 
-newtype HpkeAeadId = HpkeAeadId Word16 deriving (Eq)
+newtype AEAD_ID = AEAD_ID Word16 deriving (Eq)
 
 {- FOURMOLU_DISABLE -}
-pattern AES_128_GCM      :: HpkeAeadId
-pattern AES_128_GCM       = HpkeAeadId 0x0001
-pattern AES_256_GCM      :: HpkeAeadId
-pattern AES_256_GCM       = HpkeAeadId 0x0002
-pattern ChaCha20Poly1305 :: HpkeAeadId
-pattern ChaCha20Poly1305  = HpkeAeadId 0x0003
+pattern AES_128_GCM      :: AEAD_ID
+pattern AES_128_GCM       = AEAD_ID 0x0001
+pattern AES_256_GCM      :: AEAD_ID
+pattern AES_256_GCM       = AEAD_ID 0x0002
+pattern ChaCha20Poly1305 :: AEAD_ID
+pattern ChaCha20Poly1305  = AEAD_ID 0x0003
 
-instance Show HpkeAeadId where
+instance Show AEAD_ID where
     show AES_128_GCM      = "AES_128_GCM"
     show AES_256_GCM      = "AES_256_GCM"
     show ChaCha20Poly1305 = "ChaCha20Poly1305"
-    show (HpkeAeadId n)   = "HpkeAeadId 0x" ++ printf "%04x" n
+    show (AEAD_ID n)      = "AEAD_ID 0x" ++ printf "%04x" n
 {- FOURMOLU_ENABLE -}
