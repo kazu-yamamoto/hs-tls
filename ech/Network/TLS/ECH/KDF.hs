@@ -34,7 +34,7 @@ instance KDF SHA512 where
 suite_id :: KEM_ID -> ByteString
 suite_id kem_id = "KEM" <> i
   where
-    i = i2ospOf_ (fromIntegral (fromKEM_ID kem_id)) 2
+    i = i2ospOf_ 2 $ fromIntegral (fromKEM_ID kem_id)
 
 labeledExtract :: KDF a => KEM_ID -> Salt -> ByteString -> IKM -> PRK a
 labeledExtract kem_id salt label ikm = extract salt labeled_ikm
@@ -46,4 +46,4 @@ labeledExpand
 labeledExpand kem_id prk label info len = expand prk labeled_info len
   where
     labeled_info =
-        i2ospOf_ len 2 <> "HPKE-v1" <> suite_id kem_id <> label <> info
+        i2ospOf_ 2 (fromIntegral len) <> "HPKE-v1" <> suite_id kem_id <> label <> info
