@@ -1,6 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Network.TLS.ECH.KDF where
+module Network.TLS.ECH.KDF (
+    KDF (..),
+    SHA256,
+    SHA384,
+    SHA512,
+    PRK,
+    labeledExtract,
+    labeledExpand,
+)
+where
 
 import Crypto.Hash.Algorithms (SHA256, SHA384, SHA512)
 import Crypto.KDF.HKDF (PRK)
