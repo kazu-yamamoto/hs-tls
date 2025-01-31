@@ -98,6 +98,32 @@ aes128tagLength = 16
 
 ----------------------------------------------------------------
 
+instance Aead AES256 where
+    initialize = initAes256gcm
+    seal = mkSeal encryptAes256gcm
+    open = mkOpen decryptAes256gcm aes256tagLength
+
+initAes256gcm :: (ByteArray k, ByteArrayAccess n) => k -> n -> AEAD AES256
+initAes256gcm key nonce = st1
+  where
+    st0 = noFail (Cipher.cipherInit key) :: AES256
+    st1 = noFail $ Cipher.aeadInit Cipher.AEAD_GCM st0 nonce
+
+encryptAes256gcm :: AEAD AES256 -> AeadEncrypt
+encryptAes256gcm st = encrypt
+  where
+    encrypt aad plain = simpleEncrypt st aad plain aes256tagLength
+
+decryptAes256gcm :: AEAD AES256 -> AeadDecrypt
+decryptAes256gcm st = decrypt
+  where
+    decrypt aad cipher = simpleDecrypt st aad cipher aes256tagLength
+
+aes256tagLength :: Int
+aes256tagLength = 16
+
+----------------------------------------------------------------
+
 instance Aead ChaCha20Poly1305 where
     initialize = initChacha20poly1305
     seal = mkSeal encryptChacha20poly1305
