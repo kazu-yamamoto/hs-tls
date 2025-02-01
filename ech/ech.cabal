@@ -17,6 +17,7 @@ library
     exposed-modules:  Network.TLS.ECH.AEAD
                       Network.TLS.ECH.HPKE
                       Network.TLS.ECH.KDF
+                      Network.TLS.ECH.KEM
                       Network.TLS.ECH.Types
     default-language: Haskell2010
     ghc-options:      -Wall
