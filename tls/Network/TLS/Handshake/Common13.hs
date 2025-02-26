@@ -206,19 +206,18 @@ sign ctx pub hs target = liftIO $ do
 ----------------------------------------------------------------
 
 makePSKBinder
-    :: Context
-    -> BaseSecret EarlySecret
+    :: BaseSecret EarlySecret
     -> Hash
     -> Int
     -> ByteString
     -- ^ Encoded client hello
-    -> IO ByteString
-makePSKBinder ctx (BaseSecret sec) usedHash truncLen ech = do
-    hChTruncated <- transcriptHashWith ctx "CH truncated" usedHash $ trunc ech
-    let th = TranscriptHash $ hash usedHash ""
-    let binderKey = deriveSecret usedHash sec "res binder" th
-    return $ makeVerifyData usedHash binderKey hChTruncated
+    -> ByteString
+makePSKBinder (BaseSecret sec) usedHash truncLen ech =
+    makeVerifyData usedHash binderKey hChTruncated
   where
+    hChTruncated = TranscriptHash $ hash usedHash $ trunc ech
+    th = TranscriptHash $ hash usedHash ""
+    binderKey = deriveSecret usedHash sec "res binder" th
     trunc x = B.take takeLen x
       where
         totalLen = B.length x
@@ -589,19 +588,21 @@ setRTT ctx chSentTime = do
     modifyTLS13State ctx $ \st -> st{tls13stRTT = rtt}
 
 compulteComfirm
-    :: MonadIO m => Context -> Hash -> Handshake13 -> ByteString -> m ByteString
-compulteComfirm ctx usedHash hs label = do
-    TranscriptHash echConf <-
-        transcriptHashWith ctx "ECH confirm" usedHash $ encodeHandshake13 hs
-    ClientRandom cr <- liftIO $ usingHState ctx getClientRandom
-    let prk = hkdfExtract usedHash "" cr
+    :: (MonadFail m, MonadIO m)
+    => Context -> Hash -> Handshake13 -> ByteString -> m ByteString
+compulteComfirm ctx usedHash sh label = do
+    ch@(ClientHello _ (ClientRandom cr) _ _) <-
+        fromJust <$> liftIO (usingHState ctx getClientHello)
+    let echConf = hashChunks usedHash [encodeHandshake ch, encodeHandshake13 sh]
+        prk = hkdfExtract usedHash "" cr
     return $ hkdfExpandLabel usedHash prk label echConf 8
 
 ----------------------------------------------------------------
 
-setServerHelloParameters13 :: Context -> Cipher -> IO (Either TLSError ())
-setServerHelloParameters13 ctx cipher = do
-    transitTranscriptHash ctx "transit" $ cipherHash cipher
+setServerHelloParameters13
+    :: Context -> Cipher -> Bool -> IO (Either TLSError ())
+setServerHelloParameters13 ctx cipher isHRR = do
+    transitTranscriptHash ctx "transit" (cipherHash cipher) isHRR
     usingHState ctx $ do
         hst <- get
         case hstPendingCipher hst of
