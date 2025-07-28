@@ -5,6 +5,7 @@ module Network.TLS.Record.Recv (
 ) where
 
 import qualified Data.ByteString as B
+import Network.Control.Recv
 
 import Network.TLS.Context.Internal
 import Network.TLS.Hooks
@@ -95,18 +96,20 @@ maximumSizeExceeded = Error_Protocol "record exceeding maximum size" RecordOverf
 
 readExactBytes :: Context -> Int -> IO (Either TLSError ByteString)
 readExactBytes ctx sz = do
-    hdrbs <- contextRecv ctx sz
-    if B.length hdrbs == sz
-        then return $ Right hdrbs
-        else do
+    let ctl = ctxControl ctx
+        recv = contextRecv ctx
+    ebs <- withControlledRecv ctl recv sz return
+    case ebs of
+        Right bs -> return $ Right bs
+        Left EOF -> do
             setEOF ctx
-            return . Left $
-                if B.null hdrbs
-                    then Error_EOF
-                    else
-                        Error_Packet
-                            ( "partial packet: expecting "
-                                ++ show sz
-                                ++ " bytes, got: "
-                                ++ show (B.length hdrbs)
-                            )
+            return $ Left Error_EOF
+        Left Break -> do
+            setEOF ctx
+            bs <- getLeftover ctl
+            let emsg =
+                    "partial packet: expecting "
+                        ++ show sz
+                        ++ " bytes, got: "
+                        ++ show (B.length bs)
+            return $ Left $ Error_Packet emsg

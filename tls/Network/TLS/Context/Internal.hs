@@ -91,6 +91,7 @@ import Control.Monad.State.Strict
 import qualified Data.ByteString as B
 import Data.IORef
 import Data.Tuple
+import Network.Control.Recv
 
 import Network.TLS.Backend
 import Network.TLS.Cipher
@@ -153,6 +154,7 @@ data Context
     , ctxPeerRecordLimit :: IORef RecordLimit
     -- ^ maximum size of plaintext fragments, val + 1 is used for TLS 1.3
     , ctxHPKE :: IORef (Maybe (HPKEF, Int))
+    , ctxControl :: Control
     }
 
 type HPKEF = ByteString -> ByteString -> IO ByteString

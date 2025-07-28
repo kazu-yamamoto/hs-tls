@@ -72,6 +72,7 @@ module Network.TLS.Context (
 import Control.Concurrent.MVar
 import Control.Monad.State.Strict
 import Data.IORef
+import Network.Control.Recv
 
 import Network.TLS.Backend
 import Network.TLS.Cipher
@@ -180,6 +181,7 @@ contextNew backend params = liftIO $ do
     mylimref <- newRecordLimitRef $ Just defaultRecordSizeLimit
     peerlimref <- newRecordLimitRef $ Just defaultRecordSizeLimit
     hpkeref <- newIORef Nothing
+    ctl <- newControl $ return True
     let roleParams =
             RoleParams
                 { doHandshake_ = doHandshake params
@@ -214,6 +216,7 @@ contextNew backend params = liftIO $ do
                 , ctxQUICMode = False
                 , ctxTLS13State = st13ref
                 , ctxHPKE = hpkeref
+                , ctxControl = ctl
                 }
 
         syncNoOp _ _ = return ()
