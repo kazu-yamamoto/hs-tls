@@ -39,9 +39,6 @@ instance HasBackend Backend where
     initializeBackend _ = return ()
     getBackend = id
 
-safeRecv :: Network.Socket -> Int -> IO ByteString
-safeRecv = Network.recv
-
 instance HasBackend Network.Socket where
     initializeBackend _ = return ()
     getBackend sock =
@@ -49,17 +46,8 @@ instance HasBackend Network.Socket where
             { backendFlush = return ()
             , backendClose = Network.close sock
             , backendSend = Network.sendAll sock
-            , backendRecv = recvAll
+            , backendRecv = Network.recv sock
             }
-      where
-        recvAll n = B.concat <$> loop n
-          where
-            loop 0 = return []
-            loop left = do
-                r <- safeRecv sock left
-                if B.null r
-                    then return []
-                    else (r :) <$> loop (left - B.length r)
 
 instance HasBackend Handle where
     initializeBackend handle = hSetBuffering handle NoBuffering
