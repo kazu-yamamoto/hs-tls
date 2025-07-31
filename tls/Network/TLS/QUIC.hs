@@ -97,6 +97,7 @@ nullBackend =
         , backendClose = return ()
         , backendSend = \_ -> return ()
         , backendRecv = \_ -> return ""
+        , backendCont = return True
         }
 
 -- | Argument given to 'quicInstallKeys' when encryption material is available.

@@ -181,7 +181,8 @@ contextNew backend params = liftIO $ do
     mylimref <- newRecordLimitRef $ Just defaultRecordSizeLimit
     peerlimref <- newRecordLimitRef $ Just defaultRecordSizeLimit
     hpkeref <- newIORef Nothing
-    ctl <- newControl $ return True
+    let be = getBackend backend
+    ctl <- newControl $ backendCont be
     let roleParams =
             RoleParams
                 { doHandshake_ = doHandshake params
@@ -192,7 +193,7 @@ contextNew backend params = liftIO $ do
 
     let ctx =
             Context
-                { ctxBackend = getBackend backend
+                { ctxBackend = be
                 , ctxShared = shared
                 , ctxSupported = supported
                 , ctxDebug = debug

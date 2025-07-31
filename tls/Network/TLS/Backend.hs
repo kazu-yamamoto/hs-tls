@@ -12,6 +12,7 @@ module Network.TLS.Backend (
     Backend (..),
 ) where
 
+import Control.Concurrent.STM (atomically)
 import qualified Data.ByteString as B
 import qualified Network.Socket as Network
 import qualified Network.Socket.ByteString as Network
@@ -29,6 +30,7 @@ data Backend = Backend
     -- ^ Send a bytestring through the connection.
     , backendRecv :: Int -> IO ByteString
     -- ^ Receive specified number of bytes from the connection.
+    , backendCont :: IO Bool
     }
 
 class HasBackend a where
@@ -47,7 +49,13 @@ instance HasBackend Network.Socket where
             , backendClose = Network.close sock
             , backendSend = Network.sendAll sock
             , backendRecv = Network.recv sock
+            , backendCont = cont
             }
+      where
+        cont = do
+            wait <- Network.waitReadSocketSTM sock
+            atomically wait
+            return True
 
 instance HasBackend Handle where
     initializeBackend handle = hSetBuffering handle NoBuffering
@@ -57,4 +65,5 @@ instance HasBackend Handle where
             , backendClose = hClose handle
             , backendSend = B.hPut handle
             , backendRecv = B.hGet handle
+            , backendCont = return True
             }
