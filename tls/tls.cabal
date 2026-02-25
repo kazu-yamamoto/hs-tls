@@ -131,6 +131,7 @@ library
         ech-config,
         hpke,
         memory >=0.18 && <0.19,
+        mlkem,
         mtl >=2.2 && <2.4,
         network >=3.1,
         random >=1.2 && <1.4,
