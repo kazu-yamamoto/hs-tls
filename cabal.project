@@ -8,3 +8,5 @@ packages:
 test-show-details: direct
 
 tests: True
+
+constraints: mlkem +use_crypton

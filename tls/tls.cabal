@@ -16,6 +16,7 @@ build-type:         Simple
 extra-source-files:
     test/*.hs
     CHANGELOG.md
+    cabal.project
 
 source-repository head
     type:     git
