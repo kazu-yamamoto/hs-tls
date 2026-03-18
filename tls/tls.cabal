@@ -232,6 +232,7 @@ test-suite spec
         crypton-x509-validation,
         ech-config,
         hspec,
+        ram,
         serialise,
         time-hourglass,
         tls
