@@ -93,7 +93,7 @@ validateSession ctx ciphers sni ems m@(Just sd)
     | TLS12 < sessionVersion sd = return Nothing -- fixme
     | CipherId (sessionCipher sd) `notElem` ciphers =
         throwCore $
-            Error_Protocol "new cipher is diffrent from the old one" IllegalParameter
+            Error_Protocol "new cipher is different from the old one" IllegalParameter
     | isJust sni && sessionClientSNI sd /= sni = do
         usingState_ ctx clearClientSNI
         return Nothing

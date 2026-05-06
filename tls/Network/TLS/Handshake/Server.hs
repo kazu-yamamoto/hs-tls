@@ -45,9 +45,9 @@ handshakeServerWith = handshake
 -- | Put the server context in handshake mode.
 --
 -- Expect a client hello message as parameter.
--- This is useful when the client hello has been already poped from the recv layer to inspect the packet.
+-- This is useful when the client hello has been already popped from the recv layer to inspect the packet.
 --
--- When the function returns, a new handshake has been succesfully negociated.
+-- When the function returns, a new handshake has been successfully negotiated.
 -- On any error, a HandshakeFailed exception is raised.
 handshake :: ServerParams -> Context -> HandshakeR -> IO ()
 handshake sparams ctx chb@(ClientHello ch, bs) = do
@@ -66,7 +66,7 @@ handshake sparams ctx chb@(ClientHello ch, bs) = do
                 SelectKeyShareHRR g -> do
                     sendHRR ctx g r0 chI $ isJust mcrnd
                     -- Don't reset ctxEstablished since 0-RTT data
-                    -- would be comming, which should be ignored.
+                    -- would be coming, which should be ignored.
                     handshakeServer sparams ctx
                 SelectKeyShareFound cliKeyShare -> do
                     unless (checkClientKeyShareKeyLength cliKeyShare) $

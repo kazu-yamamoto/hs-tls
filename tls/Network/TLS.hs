@@ -11,7 +11,7 @@
 -- protocol, and support RSA and Ephemeral (Elliptic curve and
 -- regular) Diffie Hellman key exchanges, and many extensions.
 --
--- The tipical usage is:
+-- The typical usage is:
 --
 -- > socket <- ...
 -- > ctx <- contextNew socket <params>

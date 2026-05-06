@@ -65,7 +65,7 @@ data DebugParams = DebugParams
     --
     -- Default: 'Nothing'
     , debugPrintSeed :: Seed -> IO ()
-    -- ^ Add a way to print the seed that was randomly generated. re-using the same seed
+    -- ^ Add a way to print the seed that was randomly generated. reusing the same seed
     -- will reproduce the same randomness with 'debugSeed'
     --
     -- Default: no printing
@@ -669,7 +669,7 @@ data ClientHooks = ClientHooks
     --   (3) rejecting unless 1 < dh_p && pub < dh_p - 1
     --   (4) rejecting if dh_size < 1024 (to prevent Logjam attack)
     --
-    --   See RFC 7919 section 3.1 for recommandations.
+    --   See RFC 7919 section 3.1 for recommendations.
     , onServerFinished :: Information -> IO ()
     -- ^ When a handshake is done, this hook can check `Information`.
     , onSelectKeyShareGroups :: [Group] -> [Group]
@@ -734,7 +734,7 @@ data ServerHooks = ServerHooks
     -- of the certificate.  This verification is performed by the
     -- library internally.
     --
-    -- Default: returns the followings:
+    -- Default: returns the following:
     --
     -- @
     -- CertificateUsageReject (CertificateRejectOther "no client certificates expected")
@@ -750,7 +750,7 @@ data ServerHooks = ServerHooks
     -- client version and the client list of ciphers.
     --
     -- This could be useful with old clients and as a workaround to
-    -- the BEAST (where RC4 is sometimes prefered with TLS < 1.1)
+    -- the BEAST (where RC4 is sometimes preferred with TLS < 1.1)
     --
     -- The client cipher list cannot be empty.
     --

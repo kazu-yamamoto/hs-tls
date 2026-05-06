@@ -369,7 +369,7 @@ data KeyUpdateRequest
       TwoWay
     deriving (Eq, Show)
 
--- | Updating appication traffic secrets for TLS 1.3.
+-- | Updating application traffic secrets for TLS 1.3.
 --   If this API is called for TLS 1.3, 'True' is returned.
 --   Otherwise, 'False' is returned.
 updateKey :: MonadIO m => Context -> KeyUpdateRequest -> m Bool

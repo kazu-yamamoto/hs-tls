@@ -116,7 +116,7 @@ data QUICCallbacks = QUICCallbacks
     { quicSend :: [(CryptLevel, ByteString)] -> IO ()
     -- ^ Called by TLS so that QUIC sends one or more handshake fragments. The
     -- content transiting on this API is the plaintext of the fragments and
-    -- QUIC responsability is to encrypt this payload with the key material
+    -- QUIC responsibility is to encrypt this payload with the key material
     -- given for the specified level and an appropriate encryption scheme.
     --
     -- The size of the fragments may exceed QUIC datagram limits so QUIC may
@@ -194,7 +194,7 @@ tlsQUICClient cparams callbacks = do
         let qexts = filterQTP exts
         when (null qexts) $ do
             throwCore $
-                Error_Protocol "QUIC transport parameters are mssing" MissingExtension
+                Error_Protocol "QUIC transport parameters are missing" MissingExtension
         quicNotifyExtensions callbacks ctx qexts
         quicInstallKeys callbacks ctx (InstallApplicationKeys appSecInfo)
 
@@ -222,7 +222,7 @@ tlsQUICServer sparams callbacks = do
         let qexts = filterQTP exts
         when (null qexts) $ do
             throwCore $
-                Error_Protocol "QUIC transport parameters are mssing" MissingExtension
+                Error_Protocol "QUIC transport parameters are missing" MissingExtension
         quicNotifyExtensions callbacks ctx qexts
         quicInstallKeys callbacks ctx (InstallEarlyKeys mEarlySecInfo)
         quicInstallKeys callbacks ctx (InstallHandshakeKeys handSecInfo)
