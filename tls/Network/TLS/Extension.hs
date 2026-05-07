@@ -443,7 +443,7 @@ data MessageType
 ------------------------------------------------------------
 
 -- | Server Name extension including the name type and the associated name.
--- the associated name decoding is dependant of its name type.
+-- the associated name decoding is dependent of its name type.
 -- name type = 0 : hostname
 newtype ServerName = ServerName [ServerNameType] deriving (Show, Eq)
 

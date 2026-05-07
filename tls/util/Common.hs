@@ -111,7 +111,7 @@ getInfo ctx = do
     minfo <- contextGetInformation ctx
     case minfo of
         Nothing -> do
-            putStrLn "Erro: information cannot be obtained"
+            putStrLn "Error: information cannot be obtained"
             exitFailure
         Just info -> return info
 

@@ -99,7 +99,7 @@ main = do
             BS.writeFile secfileP secPEM
             {-
                         let secfileN = num ++ ".nss"
-                            x = magic <> skm -- FIXME: pk is neccessary, sigh.
+                            x = magic <> skm -- FIXME: pk is necessary, sigh.
                             len = BS.length x
                             (a, b) = len `divMod` 256
                             y = BS.pack [fromIntegral a, fromIntegral b] <> x <> encodedConfigList

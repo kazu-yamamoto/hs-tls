@@ -37,7 +37,7 @@ defaultConfig :: Config
 defaultConfig =
     Config
         { ticketLifetime = 7200 -- 2 hours
-        , secretKeyInterval = 1800 -- 30 minites
+        , secretKeyInterval = 1800 -- 30 minutes
         }
 
 -- | Creating a session ticket manager.

@@ -1002,7 +1002,7 @@ handshake13_ee_groups (CSP13 (cli, srv)) = do
             , srv{serverSupported = svrSupported}
             )
     (_, serverMessages) <- runTLSCapture13 params
-    -- The server should tell X25519 in supported_groups in EE to clinet
+    -- The server should tell X25519 in supported_groups in EE to client
     let isSupportedGroups (ExtensionRaw eid _) = eid == EID_SupportedGroups
         eeMessagesHaveExt =
             [ any isSupportedGroups exts

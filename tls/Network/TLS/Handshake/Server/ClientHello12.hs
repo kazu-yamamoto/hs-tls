@@ -101,7 +101,7 @@ credsTriple sparams CH{..} extraCreds
 
     -- Cipher selection is performed in two steps: first server credentials
     -- are flagged as not suitable for signature if not compatible with
-    -- negotiated signature parameters.  Then ciphers are evalutated from
+    -- negotiated signature parameters.  Then ciphers are evaluated from
     -- the resulting credentials.
 
     supported = serverSupported sparams

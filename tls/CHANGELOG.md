@@ -8,7 +8,7 @@
 
 ## Version 2.4.0
 
-* Idential to v2.3.1 but major version up as v2.3.1 breaks "quic".
+* Identical to v2.3.1 but major version up as v2.3.1 breaks "quic".
 
 ## Version 2.3.1 (deprecated)
 
@@ -91,14 +91,14 @@
   This feature is automatically used if the peer supports it.
 * More tests with `tlsfuzzer` especially for client authentication
   and 0-RTT.
-* Implementing a utility funcation, `validateClientCertificate`, for
+* Implementing a utility function, `validateClientCertificate`, for
   client authentication.
 * Bug fix for echo back logic of Cookie extension.
 * More pretty show for the internal `Handshake` structure for debugging.
 
 ## Version 2.1.6
 
-* Testing with "tlsfuzzer" again. Now don't send an alert agaist to
+* Testing with "tlsfuzzer" again. Now don't send an alert against to
   peer's alert. Double locking (aka self dead-lock) is fixed. Sending
   an alert for known-but-cannot-parse extensions. Other corner cases
   are also fixed.
@@ -362,7 +362,7 @@ FEATURES:
 API CHANGES:
 
 - `SessionManager` implementations need to provide a `sessionResumeOnlyOnce`
-  function to accomodate resumption scenarios with 0-RTT data.  The function is
+  function to accommodate resumption scenarios with 0-RTT data.  The function is
   called only on the server side.
 - Data type `SessionData` is extended with four new fields for TLS version 1.3.
   `SessionManager` implementations that serializes/deserializes `SessionData`
