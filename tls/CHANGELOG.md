@@ -1,5 +1,10 @@
 # Change log for "tls"
 
+## Version 2.4.2
+
+* The `Network.TLS.Extra.CipherCBC` module is added.
+  [#526](https://github.com/haskell-tls/hs-tls/pull/526)
+
 ## Version 2.4.1
 
 * Ensure same `supported_groups` before/after HRR.
