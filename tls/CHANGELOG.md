@@ -1,5 +1,10 @@
 # Change log for "tls"
 
+## Version 2.4.8
+
+* Stop printing traffic secrets and the session secret
+ [#549](https://github.com/haskell-tls/hs-tls/pull/549)
+
 ## Version 2.4.7
 
 * The AES-GCM and ChaCha20-Poly1305 bulk ciphers go through the one-call
